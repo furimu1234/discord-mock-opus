@@ -97,11 +97,13 @@ async function switchBot(project: Project): Promise<void> {
 }
 
 async function runTests(project: Project, ids: string[]): Promise<void> {
+  // テストの後は、実行したプロジェクトではなく選択中の Bot に戻す。
+  const selected = projects.find((p) => p.name === bot?.project) ?? project;
   await stopBot();
   testRun = spawnRunner(project.dir, { ...config(project), ids, project: project.name }, 'inherit');
   await exited(testRun);
   testRun = undefined;
-  await switchBot(project);
+  await switchBot(selected);
   await post('/tests/finish', { activeBot: bot?.project ?? null });
   await registerAll(projects);
 }

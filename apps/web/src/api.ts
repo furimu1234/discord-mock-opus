@@ -71,11 +71,10 @@ export function useMockData(): MockData {
   const timer = useRef<number | undefined>(undefined);
 
   const load = useCallback(async () => {
-    const [nextState, nextTests] = await Promise.all([api.get('/state'), api.get('/tests')]);
+    const [nextState, nextTests, nextDms] = await Promise.all([api.get('/state'), api.get('/tests'), api.get('/dms')]);
     setState(nextState);
     setTests(nextTests);
-    const userId = nextState.activeUserId as string | null;
-    setDms(userId ? await api.get(`/dms?userId=${userId}`).catch(() => []) : []);
+    setDms(nextDms);
   }, []);
 
   const refresh = useCallback(() => {

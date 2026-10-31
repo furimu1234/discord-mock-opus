@@ -8,9 +8,10 @@ import {
 } from './components/Icons';
 import { Message } from './components/Message';
 import { ModalDialog } from './components/ModalDialog';
-import { TestsPage } from './components/TestsPage';
+import { TestsPage, TestsPanel, useTestSelection, type TestSelection } from './components/TestsPage';
 
 type View = { kind: 'guild'; guildId: string } | { kind: 'dm' } | { kind: 'tests' } | { kind: 'admin' };
+type PanelTab = 'members' | 'tests';
 
 const TEXT = 0;
 const VOICE = 2;
@@ -142,6 +143,38 @@ function UserPanel({ state, activeUser, voice, onLeaveVoice, onError }: {
   );
 }
 
+function SidePanel({ tab, onTab, guild, state, tests, selection, onError }: {
+  tab: PanelTab;
+  onTab: (tab: PanelTab) => void;
+  guild?: Json;
+  state: Json;
+  tests: Json | null;
+  selection: TestSelection;
+  onError: (message: string) => void;
+}) {
+  // DM にメンバーの一覧はないため、テストケースだけを表示する。
+  const active = guild ? tab : 'tests';
+  const tabButton = (id: PanelTab, label: string) => (
+    <button role="tab" className={active === id ? 'panel-tab active' : 'panel-tab'} aria-selected={active === id}
+      disabled={id === 'members' && !guild} onClick={() => onTab(id)}>
+      {label}
+    </button>
+  );
+  return (
+    <aside className={active === 'tests' ? 'side-panel wide' : 'side-panel'}>
+      <div className="panel-tabs" role="tablist" aria-label="右パネル">
+        {tabButton('members', 'メンバー')}
+        {tabButton('tests', 'テストケース')}
+      </div>
+      <div className="panel-body" role="tabpanel">
+        {active === 'members' && guild
+          ? <MemberList guild={guild} state={state} />
+          : <TestsPanel tests={tests} selection={selection} onError={onError} />}
+      </div>
+    </aside>
+  );
+}
+
 function MemberList({ guild, state }: { guild: Json; state: Json }) {
   const members = Object.values<Json>(guild.members);
   const hoisted = (guild.roles as Json[]).filter((role) => role.hoist).sort((a, b) => b.position - a.position);
@@ -153,7 +186,7 @@ function MemberList({ guild, state }: { guild: Json; state: Json }) {
   });
   sections.push({ title: 'オンライン', items: members.filter((m) => !placed.has(m.user.id)) });
   return (
-    <aside className="members" aria-label="メンバー">
+    <div className="members" aria-label="メンバー">
       {sections.filter((section) => section.items.length > 0).map((section) => (
         <div key={section.title}>
           <h3>{section.title} — {section.items.length}</h3>
@@ -169,11 +202,11 @@ function MemberList({ guild, state }: { guild: Json; state: Json }) {
           })}
         </div>
       ))}
-    </aside>
+    </div>
   );
 }
 
-function ChatArea({ title, icon, messages, channelId, guild, state, activeUser, placeholder, resolveChannel, onError, showMembers, onToggleMembers }: {
+function ChatArea({ title, icon, messages, channelId, guild, state, activeUser, placeholder, resolveChannel, onError, panel, showPanel, onTogglePanel }: {
   title: string;
   icon: React.ReactNode;
   messages: Json[];
@@ -184,8 +217,9 @@ function ChatArea({ title, icon, messages, channelId, guild, state, activeUser, 
   placeholder: string;
   resolveChannel: () => Promise<string>;
   onError: (message: string) => void;
-  showMembers: boolean;
-  onToggleMembers: () => void;
+  panel: React.ReactNode;
+  showPanel: boolean;
+  onTogglePanel: () => void;
 }) {
   const [modal, setModal] = useState<{ modal: Json; channelId: string } | null>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -213,11 +247,9 @@ function ChatArea({ title, icon, messages, channelId, guild, state, activeUser, 
           <span className={state.botConnected ? 'bot-status online' : 'bot-status'}>
             {state.botConnected ? 'Bot 接続中' : 'Bot 未接続'}
           </span>
-          {guild && (
-            <button aria-label="メンバーリスト" title="メンバーリスト" aria-pressed={showMembers} onClick={onToggleMembers}>
-              <UsersIcon />
-            </button>
-          )}
+          <button aria-label="右パネル" title="右パネル" aria-pressed={showPanel} onClick={onTogglePanel}>
+            <UsersIcon />
+          </button>
         </div>
       </header>
       <div className="chat-body">
@@ -236,7 +268,7 @@ function ChatArea({ title, icon, messages, channelId, guild, state, activeUser, 
           <Composer channelId={channelId} placeholder={placeholder} state={state} members={members} activeUser={activeUser}
             resolveChannel={resolveChannel} onResult={onResult} onError={onError} />
         </div>
-        {guild && showMembers && <MemberList guild={guild} state={state} />}
+        {showPanel && panel}
       </div>
       {modal && (
         <ModalDialog modal={modal.modal} channelId={modal.channelId} userId={activeUser?.id}
@@ -250,7 +282,9 @@ export function App() {
   const { state, tests, dms, connected } = useMockData();
   const [view, setView] = useState<View | null>(null);
   const [channels, setChannels] = useState<Record<string, string>>({});
-  const [showMembers, setShowMembers] = useState(true);
+  const [showPanel, setShowPanel] = useState(true);
+  const [panelTab, setPanelTab] = useState<PanelTab>('members');
+  const selection = useTestSelection();
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -298,6 +332,10 @@ export function App() {
   const openDm = async () => (await api.post('/dm', { userId: activeUser?.id })).id as string;
 
   const showsChat = current.kind === 'guild' || current.kind === 'dm';
+  const panel = (
+    <SidePanel tab={panelTab} onTab={setPanelTab} guild={guild} state={state} tests={tests} selection={selection} onError={onError} />
+  );
+  const togglePanel = () => setShowPanel(!showPanel);
 
   return (
     <div className="app">
@@ -323,8 +361,7 @@ export function App() {
         channel ? (
           <ChatArea title={channel.name} icon={<HashIcon />} channelId={channel.id} guild={guild} state={state}
             messages={state.messages[channel.id] ?? []} activeUser={activeUser} placeholder={`#${channel.name} へメッセージを送信`}
-            resolveChannel={async () => channel.id} onError={onError} showMembers={showMembers}
-            onToggleMembers={() => setShowMembers(!showMembers)} />
+            resolveChannel={async () => channel.id} onError={onError} panel={panel} showPanel={showPanel} onTogglePanel={togglePanel} />
         ) : (
           <section className="chat empty-chat">テキストチャンネルがありません。管理画面から追加してください。</section>
         )
@@ -332,9 +369,9 @@ export function App() {
       {current.kind === 'dm' && (
         <ChatArea title={displayName(state.users[state.botUserId])} icon={<ChatIcon />} state={state} messages={dms}
           channelId={dms[0]?.channel_id ?? null} activeUser={activeUser} placeholder="Bot へメッセージを送信"
-          resolveChannel={openDm} onError={onError} showMembers={false} onToggleMembers={() => {}} />
+          resolveChannel={openDm} onError={onError} panel={panel} showPanel={showPanel} onTogglePanel={togglePanel} />
       )}
-      {current.kind === 'tests' && <TestsPage tests={tests} onError={onError} />}
+      {current.kind === 'tests' && <TestsPage tests={tests} selection={selection} onError={onError} />}
       {current.kind === 'admin' && <AdminPage state={state} tests={tests} onError={onError} />}
       {toast && <div className="toast" role="alert">{toast}</div>}
       {!connected && <div className="toast warning" role="status">Mock との接続が切れました。再接続しています…</div>}

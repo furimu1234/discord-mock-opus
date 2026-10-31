@@ -8,8 +8,25 @@ const STATUS_LABELS: Record<string, string> = {
   failed: '失敗',
 };
 
-interface TestsPageProps {
+export interface TestSelection {
+  projectName: string | null;
+  setProjectName: (name: string) => void;
+  selected: Set<string>;
+  setSelected: (ids: Set<string>) => void;
+}
+
+/** 右パネルとテスト画面で、選択中のテストケースを共有する。 */
+export function useTestSelection(): TestSelection {
+  const [projectName, setProjectName] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  return { projectName, setProjectName, selected, setSelected };
+}
+
+interface TestListProps {
   tests: Json | null;
+  selection: TestSelection;
+  /** 右パネルに収める表示。 */
+  compact?: boolean;
   onError: (message: string) => void;
 }
 
@@ -48,10 +65,9 @@ function GroupCheckbox({ checked, indeterminate, disabled, onChange, label }: {
   );
 }
 
-export function TestsPage({ tests, onError }: TestsPageProps) {
+function TestList({ tests, selection, compact = false, onError }: TestListProps) {
+  const { projectName, setProjectName, selected, setSelected } = selection;
   const projects = (tests?.projects ?? []) as Json[];
-  const [projectName, setProjectName] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const project = projects.find((p) => p.name === projectName) ?? projects[0];
@@ -82,40 +98,36 @@ export function TestsPage({ tests, onError }: TestsPageProps) {
   const selectedCount = runnable.filter((t) => selected.has(t.id)).length;
 
   if (!tests?.agentConnected) {
-    return (
-      <main className="page">
-        <h1>テスト</h1>
-        <div className="notice">testClient が起動していません。`pnpm test` を実行してください。</div>
-      </main>
-    );
+    return <div className="notice">testClient が起動していません。`pnpm test` を実行してください。</div>;
   }
 
+  const runButton = (
+    <button className="button success" disabled={running || selectedCount === 0} onClick={run}>
+      {running ? '実行中…' : `選択した ${selectedCount} 件を実行`}
+    </button>
+  );
+
   return (
-    <main className="page tests-page">
-      <header className="page-header">
-        <h1>テスト</h1>
-        <div className="page-actions">
-          <label className="inline-field">
-            <span>プロジェクト</span>
-            <select value={project?.name ?? ''} onChange={(event) => { setProjectName(event.target.value); setSelected(new Set()); }}>
-              {projects.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
-            </select>
-          </label>
-          <label className="inline-field">
-            <span>接続する Bot</span>
-            <select aria-label="接続する Bot" value={tests.activeBot ?? ''} disabled={running}
-              onChange={(event) => api.post('/tests/bot', { project: event.target.value }).catch((error: Error) => onError(error.message))}>
-              {!tests.activeBot && <option value="">なし</option>}
-              {projects.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
-            </select>
-          </label>
-          <button className="button secondary" disabled={running}
-            onClick={() => api.post('/tests/reload').catch((error: Error) => onError(error.message))}>一覧を更新</button>
-          <button className="button success" disabled={running || selectedCount === 0} onClick={run}>
-            {running ? '実行中…' : `選択した ${selectedCount} 件を実行`}
-          </button>
-        </div>
-      </header>
+    <div className={compact ? 'test-list compact' : 'test-list'}>
+      <div className="test-controls">
+        <label className="inline-field">
+          <span>プロジェクト</span>
+          <select value={project?.name ?? ''} onChange={(event) => { setProjectName(event.target.value); setSelected(new Set()); }}>
+            {projects.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+          </select>
+        </label>
+        <label className="inline-field">
+          <span>接続する Bot</span>
+          <select aria-label="接続する Bot" value={tests.activeBot ?? ''} disabled={running}
+            onChange={(event) => api.post('/tests/bot', { project: event.target.value }).catch((error: Error) => onError(error.message))}>
+            {!tests.activeBot && <option value="">なし</option>}
+            {projects.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+          </select>
+        </label>
+        <button className="button secondary" disabled={running}
+          onClick={() => api.post('/tests/reload').catch((error: Error) => onError(error.message))}>一覧を更新</button>
+        {!compact && runButton}
+      </div>
 
       <div className="tests-toolbar">
         <label className="check-label">
@@ -149,7 +161,7 @@ export function TestsPage({ tests, onError }: TestsPageProps) {
                   checked={ids.length > 0 && count === ids.length} indeterminate={count > 0 && count < ids.length}
                   onChange={(checked) => setMany(ids, checked)} />
                 <span className="test-group-title">{group.suite || group.file}</span>
-                <small>{group.file}</small>
+                {!compact && <small>{group.file}</small>}
               </label>
               {group.tests.map((test) => {
                 const result = results[test.id];
@@ -175,6 +187,20 @@ export function TestsPage({ tests, onError }: TestsPageProps) {
           );
         })}
       </div>
+      {compact && <div className="test-footer">{runButton}</div>}
+    </div>
+  );
+}
+
+export function TestsPage(props: Omit<TestListProps, 'compact'>) {
+  return (
+    <main className="page tests-page">
+      <h1>テスト</h1>
+      <TestList {...props} />
     </main>
   );
+}
+
+export function TestsPanel(props: Omit<TestListProps, 'compact'>) {
+  return <TestList {...props} compact />;
 }

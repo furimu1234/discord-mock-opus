@@ -189,7 +189,11 @@ export class Rest {
       store.setVoiceState(body.guildId, body.userId, body.channelId, snowflake()),
     );
     mock('GET', '/messages', ({ query }) => this.visibleMessages(query.get('channelId')));
-    mock('GET', '/dms', ({ query }) => store.dmsFor(query.get('userId') ?? ''));
+    mock('GET', '/dms', ({ query }) => {
+      // userId を省略すると、ログイン中のユーザーの DM を返す。
+      const userId = query.get('userId') ?? store.state.activeUserId;
+      return userId ? store.dmsFor(userId) : [];
+    });
     mock('POST', '/dm', ({ body }) => store.dmChannel(body.userId));
     mock('PATCH', '/users/:id', ({ params, body }) => store.updateUser(params.id!, body));
     mock('DELETE', '/users/:id', ({ params }) => {
