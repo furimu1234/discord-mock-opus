@@ -1,0 +1,809 @@
+import { EventEmitter } from 'node:events';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { DEFAULT_USERS } from './constants.js';
+
+/** Discord API の JSON オブジェクト。 */
+export type Json = Record<string, any>;
+
+const DISCORD_EPOCH = 1420070400000n;
+const ADMINISTRATOR = '8';
+const EVERYONE_PERMISSIONS = '2248473465835073';
+
+/** チャンネルの種類と、Discord API の値の対応。 */
+export const ChannelType = { text: 0, dm: 1, voice: 2, category: 4 } as const;
+
+export interface GuildRecord {
+  id: string;
+  name: string;
+  owner_id: string;
+  roles: Json[];
+  members: Record<string, Json>;
+  joined_at: string;
+}
+
+export interface MockState {
+  /** Bot のトークン。一度発行したら JSON に保存して使い回す。 */
+  token: string;
+  /** 起動中の Mock の URL。testClient の接続先になる。 */
+  url: string | null;
+  applicationId: string;
+  botUserId: string;
+  users: Record<string, Json>;
+  guilds: Record<string, GuildRecord>;
+  channels: Record<string, Json>;
+  messages: Record<string, Json[]>;
+  commands: Json[];
+  voiceStates: Record<string, Json>;
+  activeUserId: string | null;
+}
+
+/** 追加するロール。 */
+export interface SeedRole {
+  /** ロールの ID。省略すると生成する。同じ ID のロールは追加せず使い回す。 */
+  id?: string;
+  /** ロールの名前。 */
+  name: string;
+  /** 追加先のサーバーの ID または名前。 */
+  guild?: string;
+  /** 権限のビットフィールド。 */
+  permissions?: string | bigint;
+  /** 表示色。 */
+  color?: number;
+  /** メンバーリストで分けて表示するか。 */
+  hoist?: boolean;
+  /** メンションできるか。 */
+  mentionable?: boolean;
+}
+
+/** 追加するチャンネル。 */
+export interface SeedChannel {
+  /** チャンネルの ID。省略すると生成する。同じ ID のチャンネルは追加せず使い回す。 */
+  id?: string;
+  /** チャンネルの名前。 */
+  name: string;
+  /** 追加先のサーバーの ID または名前。 */
+  guild?: string;
+  /** チャンネルの種類。既定は `text`。 */
+  type?: keyof typeof ChannelType | number;
+  /** 親のカテゴリーの ID または名前。 */
+  parent?: string;
+  /** トピック。 */
+  topic?: string;
+}
+
+/** 追加するダミーユーザー。 */
+export interface SeedUser {
+  /** ユーザーの ID。省略すると生成する。 */
+  id?: string;
+  /** ユーザー名。 */
+  username: string;
+  /** 表示名。 */
+  globalName?: string;
+  /** アバターのハッシュ。 */
+  avatar?: string | null;
+  /** Bot のユーザーとして扱うか。 */
+  bot?: boolean;
+  /** 参加するサーバーの ID または名前。 */
+  guild?: string;
+  /** 複数のサーバーに参加させるときに指定する。 */
+  guilds?: string[];
+  /** 付与するロールの ID または名前。 */
+  roles?: string[];
+  /** サーバーでのニックネーム。 */
+  nick?: string;
+  /** テストが追加したユーザー。型定義の補完の対象にしない。 */
+  temporary?: boolean;
+}
+
+/** 追加するサーバー。 */
+export interface SeedGuild {
+  /** サーバーの ID。省略すると生成する。同じ ID のサーバーは追加せず使い回す。 */
+  id?: string;
+  /** サーバーの名前。 */
+  name: string;
+}
+
+/** 一括で追加するダミーデータ。 */
+export interface SeedInput {
+  /** サーバーを指定しないデータの追加先。省略すると最初のサーバーに追加する。 */
+  defaultGuild?: string;
+  /** 追加するサーバー。 */
+  guilds?: SeedGuild[];
+  /** 追加するロール。 */
+  roles?: SeedRole[];
+  /** 追加するチャンネル。 */
+  channels?: SeedChannel[];
+  /** 追加するダミーユーザー。 */
+  users?: SeedUser[];
+}
+
+let sequence = 0n;
+
+export function snowflake(): string {
+  const timestamp = BigInt(Date.now()) - DISCORD_EPOCH;
+  sequence = (sequence + 1n) & 0xfffn;
+  return String((timestamp << 22n) | sequence);
+}
+
+const CUSTOM_TOKEN = /^[\w.-]{16,}$/;
+
+/** URL に入れられる値だけを受け付け、本物の Bot のトークンと同じ形の値は保存しない。 */
+function assertCustomToken(token: string): void {
+  if (!CUSTOM_TOKEN.test(token)) {
+    throw new Error('トークンは英数字、`-`、`_`、`.` を使い、16 文字以上で指定してください');
+  }
+  const segments = token.split('.');
+  if (segments.length === 3 && segments[1] !== 'mock') {
+    throw new Error('本物の Bot のトークンと同じ形式の値は Mock のトークンに指定できません');
+  }
+}
+
+function emptyState(): MockState {
+  const botUserId = snowflake();
+  const secret = randomBytes(20).toString('base64url');
+  return {
+    token: `${Buffer.from(botUserId).toString('base64url')}.mock.${secret}`,
+    url: null,
+    applicationId: botUserId,
+    botUserId,
+    users: {
+      [botUserId]: {
+        id: botUserId,
+        username: 'mock-bot',
+        discriminator: '0',
+        global_name: null,
+        avatar: null,
+        bot: true,
+        system: false,
+        public_flags: 0,
+      },
+    },
+    guilds: {},
+    channels: {},
+    messages: {},
+    commands: [],
+    voiceStates: {},
+    activeUserId: null,
+  };
+}
+
+/**
+ * Discord の全リソースを保持する。変更は `dispatch` イベントとして通知し、
+ * Gateway がそれを Bot に配信する。
+ */
+export class Store extends EventEmitter {
+  state: MockState;
+  private saveTimer: NodeJS.Timeout | null = null;
+
+  constructor(
+    private readonly file?: string,
+    token?: string,
+  ) {
+    super();
+    if (token) assertCustomToken(token);
+    this.state = file && existsSync(file) ? this.load(file) : emptyState();
+    if (token) this.state.token = token;
+    // ポートの競合などで起動に失敗しても、トークンは発行済みの状態にする。
+    this.flush();
+  }
+
+  private load(file: string): MockState {
+    return { ...emptyState(), ...JSON.parse(readFileSync(file, 'utf8')) };
+  }
+
+  /** 起動時に URL を記録し、トークンとともに JSON へ保存する。 */
+  published(url: string): void {
+    this.state.url = url;
+    this.flush();
+  }
+
+  get botUser(): Json {
+    return this.state.users[this.state.botUserId]!;
+  }
+
+  private changed(): void {
+    this.emit('ui', 'STATE_SYNC', {});
+    if (!this.file || this.saveTimer) return;
+    this.saveTimer = setTimeout(() => this.flush(), 50);
+    this.saveTimer.unref();
+  }
+
+  flush(): void {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    if (!this.file) return;
+    mkdirSync(dirname(this.file), { recursive: true });
+    // testClient が同時に読むので、書き込み途中の内容が見えないよう置き換える。
+    // トークンを含むため、所有者以外は読めないようにする。
+    const temporary = `${this.file}.tmp`;
+    writeFileSync(temporary, JSON.stringify(this.state, null, 2), { mode: 0o600 });
+    renameSync(temporary, this.file);
+  }
+
+  private dispatch(event: string, data: Json): void {
+    this.emit('dispatch', event, data);
+  }
+
+  /** トークンと Bot のユーザー、アプリケーション、登録済みコマンドを残して初期化する。 */
+  reset(): void {
+    const { token, url, applicationId, botUserId, commands } = this.state;
+    const bot = this.botUser;
+    this.state = { ...emptyState(), token, url, applicationId, botUserId, commands, users: { [botUserId]: bot } };
+    this.changed();
+  }
+
+  /** 起動時に、トークンと Bot のユーザー以外のすべてのデータを消す。 */
+  clearAll(): void {
+    this.reset();
+    this.state.commands = [];
+    this.flush();
+  }
+
+  /** テストの区切りを画面に表示する。Bot には通知しない。 */
+  addTestDivider(channelId: string, label: string): void {
+    this.requireChannel(channelId);
+    (this.state.messages[channelId] ??= []).push({
+      id: snowflake(),
+      channel_id: channelId,
+      author: this.botUser,
+      content: '',
+      timestamp: new Date().toISOString(),
+      flags: 0,
+      dismock_test: label,
+    });
+    this.changed();
+  }
+
+  /** ダミーデータが 1 件もないとき、画面をすぐ操作できる初期データを入れる。 */
+  seedDefaults(): void {
+    if (Object.keys(this.state.guilds).length > 0) return;
+    const { users } = this.seed({
+      guilds: [{ name: 'テストサーバー' }],
+      channels: [
+        { name: 'テキストチャンネル', type: 'category' },
+        { name: '一般', parent: 'テキストチャンネル' },
+        { name: 'ボイスチャンネル', type: 'category' },
+        { name: 'ボイス', type: 'voice', parent: 'ボイスチャンネル' },
+      ],
+      roles: [{ name: '管理者', permissions: ADMINISTRATOR, color: 0xe67e22, hoist: true }],
+      users: DEFAULT_USERS.map((user, index) => ({ ...user, roles: index === 0 ? ['管理者'] : [] })),
+    });
+    this.state.activeUserId = users[0].id;
+    this.changed();
+  }
+
+  switchUser(userId: string): void {
+    this.requireUser(userId);
+    this.state.activeUserId = userId;
+    this.changed();
+  }
+
+  updateUser(userId: string, patch: Json): Json {
+    const user = this.requireUser(userId);
+    if (typeof patch.username === 'string') user.username = patch.username;
+    if (patch.bot !== undefined) user.bot = Boolean(patch.bot);
+    if (patch.avatar !== undefined) user.avatar = patch.avatar;
+    this.changed();
+    for (const guild of Object.values(this.state.guilds)) {
+      const member = guild.members[userId];
+      if (member) this.dispatch('GUILD_MEMBER_UPDATE', { guild_id: guild.id, ...member });
+    }
+    return user;
+  }
+
+  deleteUser(userId: string): void {
+    if (userId === this.state.botUserId) throw new Error('Bot のユーザーは削除できません');
+    const user = this.requireUser(userId);
+    for (const guild of Object.values(this.state.guilds)) {
+      if (!guild.members[userId]) continue;
+      delete guild.members[userId];
+      this.dispatch('GUILD_MEMBER_REMOVE', { guild_id: guild.id, user });
+    }
+    delete this.state.users[userId];
+    if (this.state.activeUserId === userId) this.state.activeUserId = null;
+    this.changed();
+  }
+
+  deleteGuild(guildId: string): void {
+    this.requireGuild(guildId);
+    for (const channel of this.guildChannels(guildId)) {
+      delete this.state.channels[channel.id];
+      delete this.state.messages[channel.id];
+    }
+    delete this.state.guilds[guildId];
+    this.changed();
+    this.dispatch('GUILD_DELETE', { id: guildId, unavailable: false });
+  }
+
+  deleteChannel(channelId: string): void {
+    const channel = this.requireChannel(channelId);
+    delete this.state.channels[channelId];
+    delete this.state.messages[channelId];
+    this.changed();
+    this.dispatch('CHANNEL_DELETE', channel);
+  }
+
+  deleteRole(guildId: string, roleId: string): void {
+    const guild = this.requireGuild(guildId);
+    if (roleId === guildId) throw new Error('@everyone は削除できません');
+    guild.roles = guild.roles.filter((role) => role.id !== roleId);
+    for (const member of Object.values(guild.members)) {
+      member.roles = member.roles.filter((id: string) => id !== roleId);
+    }
+    this.changed();
+    this.dispatch('GUILD_ROLE_DELETE', { guild_id: guildId, role_id: roleId });
+  }
+
+  /** DM の中身を含まない状態を返す。DM の閲覧には `dmsFor` を使う。 */
+  publicState(): Json {
+    const { token: _token, ...state } = this.state;
+    const messages = Object.fromEntries(
+      Object.entries(state.messages).filter(([id]) => !this.state.channels[id]?.recipients),
+    );
+    return { ...state, messages };
+  }
+
+
+  createUser(input: SeedUser): Json {
+    const user = {
+      id: input.id ?? snowflake(),
+      username: input.username,
+      discriminator: '0',
+      global_name: input.globalName ?? null,
+      avatar: input.avatar ?? null,
+      ...(input.temporary ? { temporary: true } : {}),
+      bot: input.bot ?? false,
+      system: false,
+      public_flags: 0,
+    };
+    this.state.users[user.id] = user;
+    this.changed();
+    return user;
+  }
+
+  private memberRecord(user: Json, roles: string[], nick?: string): Json {
+    return {
+      user,
+      nick: nick ?? null,
+      avatar: null,
+      roles,
+      joined_at: new Date().toISOString(),
+      premium_since: null,
+      deaf: false,
+      mute: false,
+      flags: 0,
+      pending: false,
+      communication_disabled_until: null,
+    };
+  }
+
+  createGuild(input: SeedGuild): GuildRecord {
+    // 同じ ID を指定したときは使い回す。テストを繰り返しても増えない。
+    const existing = input.id ? this.state.guilds[input.id] : undefined;
+    if (existing) return existing;
+    const id = input.id ?? snowflake();
+    const botRoleId = snowflake();
+    const guild: GuildRecord = {
+      id,
+      name: input.name,
+      owner_id: this.state.botUserId,
+      joined_at: new Date().toISOString(),
+      roles: [
+        this.roleRecord(id, { name: '@everyone', permissions: EVERYONE_PERMISSIONS }, 0),
+        this.roleRecord(botRoleId, { name: this.botUser.username, permissions: ADMINISTRATOR }, 1),
+      ],
+      members: {},
+    };
+    guild.members[this.state.botUserId] = this.memberRecord(this.botUser, [botRoleId]);
+    this.state.guilds[id] = guild;
+    this.changed();
+    this.dispatch('GUILD_CREATE', this.guildCreatePayload(guild));
+    return guild;
+  }
+
+  private roleRecord(id: string, input: SeedRole, position: number): Json {
+    return {
+      id,
+      name: input.name,
+      color: input.color ?? 0,
+      colors: { primary_color: input.color ?? 0, secondary_color: null, tertiary_color: null },
+      hoist: input.hoist ?? false,
+      icon: null,
+      unicode_emoji: null,
+      position,
+      permissions: String(input.permissions ?? '0'),
+      managed: false,
+      mentionable: input.mentionable ?? false,
+      flags: 0,
+    };
+  }
+
+  createRole(guildId: string, input: SeedRole): Json {
+    const guild = this.requireGuild(guildId);
+    const existing = guild.roles.find((role) => role.id === input.id);
+    if (existing) return existing;
+    const role = this.roleRecord(input.id ?? snowflake(), input, guild.roles.length);
+    guild.roles.push(role);
+    this.changed();
+    this.dispatch('GUILD_ROLE_CREATE', { guild_id: guildId, role });
+    return role;
+  }
+
+  createChannel(guildId: string, input: SeedChannel): Json {
+    const existing = input.id ? this.state.channels[input.id] : undefined;
+    if (existing) return existing;
+    const type = typeof input.type === 'number' ? input.type : ChannelType[input.type ?? 'text'];
+    const parent = input.parent ? this.findChannel(guildId, input.parent) : undefined;
+    const channel: Json = {
+      id: input.id ?? snowflake(),
+      type,
+      guild_id: guildId,
+      name: input.name,
+      position: this.guildChannels(guildId).length,
+      parent_id: parent?.id ?? null,
+      topic: input.topic ?? null,
+      nsfw: false,
+      last_message_id: null,
+      permission_overwrites: [],
+      rate_limit_per_user: 0,
+      ...(type === ChannelType.voice ? { bitrate: 64000, user_limit: 0 } : {}),
+    };
+    this.state.channels[channel.id] = channel;
+    this.state.messages[channel.id] = [];
+    this.changed();
+    this.dispatch('CHANNEL_CREATE', channel);
+    return channel;
+  }
+
+  addMember(guildId: string, userId: string, roles: string[] = [], nick?: string): Json {
+    const guild = this.requireGuild(guildId);
+    const member = this.memberRecord(this.requireUser(userId), roles, nick);
+    guild.members[userId] = member;
+    this.changed();
+    this.dispatch('GUILD_MEMBER_ADD', { guild_id: guildId, ...member });
+    return member;
+  }
+
+  setMemberRoles(guildId: string, userId: string, roles: string[]): Json {
+    const member = this.requireMember(guildId, userId);
+    member.roles = roles;
+    this.changed();
+    this.dispatch('GUILD_MEMBER_UPDATE', { guild_id: guildId, ...member });
+    return member;
+  }
+
+  /** ダミーデータをまとめて投入する。ロールとチャンネルは名前で相互に参照できる。 */
+  seed(input: SeedInput): Json {
+    const guilds = (input.guilds ?? []).map((guild) => this.createGuild(guild));
+    const needsGuild = input.roles?.length || input.channels?.length || input.users?.length;
+    if (needsGuild && Object.keys(this.state.guilds).length === 0) {
+      guilds.push(this.createGuild({ name: 'Test Guild' }));
+    }
+    // 同じ名前のサーバーがあるときは、今回追加したサーバーを優先する。
+    const resolveGuild = (ref?: string): string => {
+      if (!ref) return guilds[0]?.id ?? input.defaultGuild ?? Object.keys(this.state.guilds)[0]!;
+      const found = [...guilds, ...Object.values(this.state.guilds)].find((g) => g.id === ref || g.name === ref);
+      if (!found) throw new NotFound(`Unknown guild: ${ref}`);
+      return found.id;
+    };
+
+    const roles = (input.roles ?? []).map((r) => this.createRole(resolveGuild(r.guild), r));
+    const channels = (input.channels ?? []).map((c) => this.createChannel(resolveGuild(c.guild), c));
+    const users = (input.users ?? []).map((u) => {
+      const user = this.createUser(u);
+      const joining = u.guilds ?? (u.bot !== true || u.guild ? [u.guild] : []);
+      for (const ref of joining) {
+        const guildId = resolveGuild(ref);
+        const guild = this.requireGuild(guildId);
+        const roleIds = (u.roles ?? []).map((ref) => {
+          const role = guild.roles.find((r) => r.id === ref || r.name === ref);
+          if (!role) throw new NotFound(`Unknown role: ${ref}`);
+          return role.id as string;
+        });
+        this.addMember(guildId, user.id, roleIds, u.nick);
+      }
+      return user;
+    });
+    return { guilds: guilds.map((g) => this.guildPayload(g)), roles, channels, users };
+  }
+
+  private findChannel(guildId: string, ref: string): Json | undefined {
+    return this.guildChannels(guildId).find((c) => c.id === ref || c.name === ref);
+  }
+
+  requireGuild(id: string): GuildRecord {
+    const guild = this.state.guilds[id];
+    if (!guild) throw new NotFound('Unknown Guild', 10004);
+    return guild;
+  }
+
+  requireUser(id: string): Json {
+    const user = this.state.users[id];
+    if (!user) throw new NotFound('Unknown User', 10013);
+    return user;
+  }
+
+  requireMember(guildId: string, userId: string): Json {
+    const member = this.requireGuild(guildId).members[userId];
+    if (!member) throw new NotFound('Unknown Member', 10007);
+    return member;
+  }
+
+  /** Discord と同じく、@everyone と所持ロールの権限の和を返す。 */
+  memberPermissions(guildId: string, userId: string): string {
+    const guild = this.requireGuild(guildId);
+    const held = new Set([guildId, ...this.requireMember(guildId, userId).roles]);
+    const permissions = guild.roles
+      .filter((role) => held.has(role.id))
+      .reduce((total, role) => total | BigInt(role.permissions), 0n);
+    return String(permissions);
+  }
+
+  requireChannel(id: string): Json {
+    const channel = this.state.channels[id];
+    if (!channel) throw new NotFound('Unknown Channel', 10003);
+    return channel;
+  }
+
+  guildChannels(guildId: string): Json[] {
+    return Object.values(this.state.channels).filter((c) => c.guild_id === guildId);
+  }
+
+  guildPayload(guild: GuildRecord): Json {
+    return {
+      id: guild.id,
+      name: guild.name,
+      icon: null,
+      splash: null,
+      discovery_splash: null,
+      owner_id: guild.owner_id,
+      afk_channel_id: null,
+      afk_timeout: 300,
+      verification_level: 0,
+      default_message_notifications: 0,
+      explicit_content_filter: 0,
+      roles: guild.roles,
+      emojis: [],
+      stickers: [],
+      features: [],
+      mfa_level: 0,
+      application_id: null,
+      system_channel_id: null,
+      system_channel_flags: 0,
+      rules_channel_id: null,
+      vanity_url_code: null,
+      description: null,
+      banner: null,
+      premium_tier: 0,
+      premium_subscription_count: 0,
+      preferred_locale: 'en-US',
+      public_updates_channel_id: null,
+      nsfw_level: 0,
+      premium_progress_bar_enabled: false,
+    };
+  }
+
+  guildCreatePayload(guild: GuildRecord): Json {
+    const members = Object.values(guild.members);
+    return {
+      ...this.guildPayload(guild),
+      joined_at: guild.joined_at,
+      large: false,
+      unavailable: false,
+      member_count: members.length,
+      voice_states: Object.values(this.state.voiceStates).filter((v) => v.guild_id === guild.id),
+      members,
+      channels: this.guildChannels(guild.id),
+      threads: [],
+      presences: [],
+      stage_instances: [],
+      guild_scheduled_events: [],
+    };
+  }
+
+  /** ボットとユーザーの間の DM チャンネルを取得し、なければ作成する。 */
+  dmChannel(userId: string): Json {
+    const existing = Object.values(this.state.channels).find(
+      (c) => c.type === ChannelType.dm && c.recipients[0].id === userId,
+    );
+    if (existing) return existing;
+    const channel = {
+      id: snowflake(),
+      type: ChannelType.dm,
+      last_message_id: null,
+      recipients: [this.requireUser(userId)],
+    };
+    this.state.channels[channel.id] = channel;
+    this.state.messages[channel.id] = [];
+    this.changed();
+    return channel;
+  }
+
+  /** ユーザーの DM を返す。DM の閲覧には、そのユーザーでのログインが必要。 */
+  dmsFor(userId: string): Json[] {
+    if (this.state.activeUserId !== userId) {
+      throw new Forbidden('DM を閲覧するには宛先のユーザーでログインしてください');
+    }
+    const channel = Object.values(this.state.channels).find(
+      (c) => c.type === ChannelType.dm && c.recipients[0].id === userId,
+    );
+    return channel ? (this.state.messages[channel.id] ?? []) : [];
+  }
+
+  createMessage(channelId: string, author: Json, input: Json, extra: Json = {}): Json {
+    const channel = this.requireChannel(channelId);
+    const content = String(input.content ?? '');
+    const mentions = [...content.matchAll(/<@!?(\d+)>/g)]
+      .map((match) => this.state.users[match[1]!])
+      .filter((user): user is Json => Boolean(user));
+    const referenceId = input.message_reference?.message_id as string | undefined;
+    const referenced = referenceId
+      ? this.state.messages[channelId]?.find((m) => m.id === referenceId)
+      : undefined;
+    const guildId = channel.guild_id as string | undefined;
+    const message: Json = {
+      id: snowflake(),
+      channel_id: channelId,
+      ...(guildId ? { guild_id: guildId } : {}),
+      author,
+      content,
+      timestamp: new Date().toISOString(),
+      edited_timestamp: null,
+      tts: Boolean(input.tts),
+      mention_everyone: false,
+      mentions,
+      mention_roles: [...content.matchAll(/<@&(\d+)>/g)].map((match) => match[1]),
+      attachments: input.attachments ?? [],
+      embeds: input.embeds ?? [],
+      components: input.components ?? [],
+      reactions: [],
+      pinned: false,
+      type: referenced ? 19 : 0,
+      flags: input.flags ?? 0,
+      ...(referenced ? { message_reference: input.message_reference, referenced_message: referenced } : {}),
+      ...extra,
+    };
+    if (guildId && author.id !== undefined) {
+      const member = this.state.guilds[guildId]?.members[author.id as string];
+      if (member) {
+        const { user: _user, ...partial } = member;
+        message.member = partial;
+      }
+    }
+    (this.state.messages[channelId] ??= []).push(message);
+    channel.last_message_id = message.id;
+    this.changed();
+    if (((message.flags as number) & 64) === 0) this.dispatch('MESSAGE_CREATE', message);
+    return message;
+  }
+
+  findMessage(channelId: string, messageId: string): Json {
+    const message = this.state.messages[channelId]?.find((m) => m.id === messageId);
+    if (!message) throw new NotFound('Unknown Message', 10008);
+    return message;
+  }
+
+  editMessage(channelId: string, messageId: string, patch: Json): Json {
+    const message = this.findMessage(channelId, messageId);
+    for (const key of ['content', 'embeds', 'components', 'attachments', 'flags']) {
+      if (patch[key] !== undefined) message[key] = patch[key];
+    }
+    message.edited_timestamp = new Date().toISOString();
+    this.changed();
+    this.dispatch('MESSAGE_UPDATE', message);
+    return message;
+  }
+
+  deleteMessage(channelId: string, messageId: string): void {
+    const messages = this.state.messages[channelId] ?? [];
+    const message = this.findMessage(channelId, messageId);
+    messages.splice(messages.indexOf(message), 1);
+    this.changed();
+    this.dispatch('MESSAGE_DELETE', {
+      id: messageId,
+      channel_id: channelId,
+      ...(message.guild_id ? { guild_id: message.guild_id } : {}),
+    });
+  }
+
+  addReaction(channelId: string, messageId: string, userId: string, emoji: string): void {
+    const message = this.findMessage(channelId, messageId);
+    const reaction = message.reactions.find((r: Json) => r.emoji.name === emoji);
+    if (reaction) reaction.count += 1;
+    else {
+      message.reactions.push({
+        count: 1,
+        count_details: { burst: 0, normal: 1 },
+        me: userId === this.state.botUserId,
+        me_burst: false,
+        burst_colors: [],
+        emoji: { id: null, name: emoji },
+      });
+    }
+    this.changed();
+    this.dispatch('MESSAGE_REACTION_ADD', {
+      user_id: userId,
+      channel_id: channelId,
+      message_id: messageId,
+      ...(message.guild_id ? { guild_id: message.guild_id } : {}),
+      emoji: { id: null, name: emoji },
+      type: 0,
+      burst: false,
+    });
+  }
+
+  setCommands(commands: Json[], guildId?: string): Json[] {
+    const others = this.state.commands.filter((c) => (c.guild_id ?? undefined) !== guildId);
+    const saved = commands.map((command) => this.commandRecord(command, guildId));
+    this.state.commands = [...others, ...saved];
+    this.changed();
+    return saved;
+  }
+
+  addCommand(command: Json, guildId?: string): Json {
+    const existing = this.state.commands.find(
+      (c) => c.name === command.name && (c.guild_id ?? undefined) === guildId,
+    );
+    const saved = { ...this.commandRecord(command, guildId), ...(existing ? { id: existing.id } : {}) };
+    this.state.commands = [...this.state.commands.filter((c) => c !== existing), saved];
+    this.changed();
+    return saved;
+  }
+
+  private commandRecord(command: Json, guildId?: string): Json {
+    return {
+      id: command.id ?? snowflake(),
+      application_id: this.state.applicationId,
+      type: command.type ?? 1,
+      version: snowflake(),
+      default_member_permissions: null,
+      description_localizations: null,
+      name_localizations: null,
+      nsfw: false,
+      options: [],
+      ...command,
+      ...(guildId ? { guild_id: guildId } : {}),
+    };
+  }
+
+  /** ボイスチャンネルの接続状態を更新し、`VOICE_STATE_UPDATE` を配信する。 */
+  setVoiceState(guildId: string, userId: string, channelId: string | null, sessionId: string): Json {
+    const member = this.requireMember(guildId, userId);
+    const voiceState = {
+      guild_id: guildId,
+      channel_id: channelId,
+      user_id: userId,
+      member,
+      session_id: sessionId,
+      deaf: false,
+      mute: false,
+      self_deaf: false,
+      self_mute: false,
+      self_video: false,
+      suppress: false,
+      request_to_speak_timestamp: null,
+    };
+    if (channelId) this.state.voiceStates[`${guildId}:${userId}`] = voiceState;
+    else delete this.state.voiceStates[`${guildId}:${userId}`];
+    this.changed();
+    this.dispatch('VOICE_STATE_UPDATE', voiceState);
+    return voiceState;
+  }
+}
+
+export class NotFound extends Error {
+  readonly status = 404;
+  constructor(
+    message: string,
+    readonly code = 0,
+  ) {
+    super(message);
+  }
+}
+
+export class Forbidden extends Error {
+  readonly status = 403;
+  readonly code = 50001;
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@dismock/test",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "bin": { "dismock": "./bin/dismock.js" },
+  "files": ["bin", "dist"],
+  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "dependencies": {
+    "@dismock/client": "workspace:*",
+    "@dismock/server": "workspace:*",
+    "expect": "^30.5.2",
+    "jest-mock": "^30.5.2",
+    "tsx": "^4.23.15"
+  }
+}

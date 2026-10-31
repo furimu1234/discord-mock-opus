@@ -1,0 +1,18 @@
+{
+  "name": "@dismock/docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "api": "node scripts/generate-api.mjs",
+    "dev": "pnpm run api && vitepress dev",
+    "docs:build": "pnpm run api && vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "@microsoft/api-extractor": "^7.60.0",
+    "@microsoft/api-extractor-model": "^7.33.15",
+    "@microsoft/tsdoc": "^0.17.1",
+    "vitepress": "^1.6.4"
+  }
+}

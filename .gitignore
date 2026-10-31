@@ -147,3 +147,17 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Project-local environment (shell.nix)
+.local/
+.venv/
+
+# Mock server state
+data/
+
+# Generated dummy user types
+dismock-users.d.ts
+
+# Generated API docs
+apps/docs/.api/
+apps/docs/api/
