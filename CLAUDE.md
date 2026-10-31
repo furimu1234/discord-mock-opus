@@ -120,7 +120,7 @@ Mock 側は、本番の Discord インフラや外部ネットワークに一切
 - **コード変更ゼロでの透過的ルーティング**:
   - 本物の `Client` インスタンスを渡すだけで、REST API エンドポイントと Gateway URL を Mock サーバーへ自動差し替え。
   - `discord.js` の `Client` と `REST` の通信先は、テストの実行時に読み込むフック（`@dismock/client/register`）が Mock へ差し替える。Bot が自分で作成した `REST` も対象で、本物のトークンは使わない。
-  - `client.login` に渡されたトークンで判定する。Bot がトークンをどこに保存していても（`.env`、ハードコード、JSON など）同じように扱う。引数がなければ discord.js の既定どおり `client.token` を使う。Mock のトークンと一致するか、指定がなければ Mock へ接続し、一致しなければ送信せずに起動エラーにする。
+  - `client.login` に渡されたトークンで判定する。Bot がトークンをどこに保存していても（`.env`、ハードコード、JSON など）同じように扱う。引数がなければ discord.js の既定どおり `client.token` を使い、それもなければ `testClient` の `token` オプションを使う。Mock のトークンと一致すれば Mock へ接続し、どこにも指定がないか一致しなければ、送信せずに起動エラーにする。
   - `Proxy` パターンを採用し、本物の `Client` メソッド（`on`, `isReady` 等）と Mock 操作メソッド（`as`, `seed`, `messages` 等）の双方を同一インスタンスから呼び出し可能。名前が重なる `users` などは Mock 操作を優先し、本物は `bot.client` から使う。
 - **重複定義の排除（設定の一本化）**:
   - `testClient` のオプションに、モック URL（`mockUrl`）、認証トークン（`token`）、テーブルの作成（`setupDb`）、コマンド定義（`commands`）、全テスト共通の初期データ（`seed`）をまとめて指定可能。

@@ -18,6 +18,7 @@ Bot が起動時にテーブルを作らない場合は、`setupDb` で作成し
 ```ts
 export const testClient = disMock.testClient({
   entry: 'src/index.ts',
+  token: disMock.connection().token,
   setupDb: async () => {
     await disMock.db.pg().query('CREATE TABLE levels (user_id text PRIMARY KEY, level integer NOT NULL)');
   },

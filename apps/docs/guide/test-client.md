@@ -15,7 +15,7 @@ Bot の構成に合わせて、3 つの書き方から選びます。
 エントリーファイルを指定します。ファイルを読み込むと Bot が起動します。
 
 ```ts
-export const testClient = disMock.testClient({ entry: 'src/index.ts' });
+export const testClient = disMock.testClient({ entry: 'src/index.ts', token: disMock.connection().token });
 ```
 
 ### Client を公開している Bot
@@ -25,7 +25,7 @@ export const testClient = disMock.testClient({ entry: 'src/index.ts' });
 ```ts
 import { client } from '../src/bot.ts';
 
-export const testClient = disMock.testClient(client);
+export const testClient = disMock.testClient(client, { token: disMock.connection().token });
 ```
 
 ### Bot 固有の操作を追加する
@@ -39,7 +39,7 @@ class MyTestBotClient extends disMock.TestClient {
   }
 }
 
-export const testClient = new MyTestBotClient(client);
+export const testClient = new MyTestBotClient(client, { token: disMock.connection().token });
 ```
 
 ## オプション
@@ -51,13 +51,13 @@ export const testClient = new MyTestBotClient(client);
 | `setupDb` | テーブルの作成など。Bot のプロセスごとに 1 回だけ実行する |
 | `seed` | すべてのテストの前に投入する初期データ |
 | `mockUrl` | Mock の URL |
-| `token` | Mock のトークン |
+| `token` | Mock のトークン。Bot が `client.login` にトークンを渡さないときは必須 |
 
 詳しくは [TestClientOptions](../api/client/interface/TestClientOptions.md) を参照してください。
 
 ## 接続先
 
-URL とトークンは、次の順に探します。通常は指定する必要はありません。
+接続先の URL と認証に使うトークンは、次の順に探します。
 
 1. `testClient` のオプション（`mockUrl`, `token`）
 2. 環境変数（`DISMOCK_URL`, `DISMOCK_TOKEN`）
@@ -72,8 +72,10 @@ URL とトークンは、次の順に探します。通常は指定する必要�
 | `client.login` に渡された値 | 動作 |
 |---|---|
 | Mock のトークン | Mock に接続する |
-| なし | Mock のトークンで Mock に接続する |
+| なし | `testClient` の `token` を使う。これもなければ起動エラーにする |
 | それ以外（本物のトークンなど） | どこにも送らず、起動エラーにする |
+
+Mock のトークンは必ず明示します。本物の discord.js と同じように、トークンの指定漏れはエラーになります。`client.login` に引数がないときは、discord.js の既定どおり `DISCORD_TOKEN` の値を判定します。
 
 本物の Discord と使い分けるときは、たとえば `.env` の値を切り替えます。
 

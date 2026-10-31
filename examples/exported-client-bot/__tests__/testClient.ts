@@ -8,6 +8,7 @@ class MyTestBotClient extends disMock.TestClient {
 }
 
 export const testClient = new MyTestBotClient(client, {
+  token: disMock.connection().token,
   commands: [{ name: 'hi', description: 'Say hi' }],
   setupDb: () => disMock.db.pg().query('CREATE TABLE visits (name text)').then(() => undefined),
 });

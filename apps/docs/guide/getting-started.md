@@ -54,15 +54,15 @@ await client.login(process.env.DISCORD_TOKEN);
 
 ## testClient を作る
 
-`examples/my-bot/__tests__/testClient.ts` を作成します。`entry` に Bot のエントリーファイルを指定します。
+`examples/my-bot/__tests__/testClient.ts` を作成します。`entry` に Bot のエントリーファイルを、`token` に Mock のトークンを指定します。
 
 ```ts
 import * as disMock from '@dismock/client';
 
-export const testClient = disMock.testClient({ entry: 'src/index.ts' });
+export const testClient = disMock.testClient({ entry: 'src/index.ts', token: disMock.connection().token });
 ```
 
-テストでは `client.login` の接続先が Mock に差し替わるので、本物のトークンは必要ありません。`DISCORD_TOKEN` が未設定のときは Mock のトークンで接続します。
+`disMock.connection().token` は Mock が保存したトークンを返すので、先に Mock を起動してください。テストでは `client.login` の接続先が Mock に差し替わります。本物のトークンは必要ありません。
 
 ## テストを書く
 

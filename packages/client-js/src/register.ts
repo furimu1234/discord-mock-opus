@@ -38,6 +38,8 @@ interface ModuleExports {
 
 /** discord.js の login と同じように、先頭の種別を取り除いて比較する。 */
 const TOKEN_PREFIX = /^(Bot|Bearer)\s*/i;
+const TOKEN_MISSING =
+  'Mock のトークンが指定されていません。client.login の引数か testClient の token オプションに指定してください';
 const TOKEN_MISMATCH =
   'client.login に渡されたトークンが Mock のトークンと一致しません。トークンは送信していません。Mock のトークンに切り替えてください';
 
@@ -58,10 +60,12 @@ function patchRest({ REST }: ModuleExports): void {
 function patchClient({ Client }: ModuleExports): void {
   if (!Client) return;
   const { login } = Client.prototype;
-  // Bot が指定したトークンが Mock のものでなければ、どこにも送らずに起動を止める。
+  // 開発者が指定したトークンが Mock のものでなければ、どこにも送らずに起動を止める。
   Client.prototype.login = async function (this: DiscordClientLike, botToken: string | null = this.token) {
     const { url, token } = connection();
-    if (botToken && botToken.replace(TOKEN_PREFIX, '') !== token) throw new StartupError(TOKEN_MISMATCH);
+    const specified = botToken || runtime.overrides.token;
+    if (!specified) throw new StartupError(TOKEN_MISSING);
+    if (specified.replace(TOKEN_PREFIX, '') !== token) throw new StartupError(TOKEN_MISMATCH);
     runtime.loginClients.push(this);
     this.rest.options.api = `${url}/api`;
     return login.call(this, token);

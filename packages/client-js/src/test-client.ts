@@ -51,7 +51,10 @@ export interface TestSeed extends SeedInput {
 export interface TestClientOptions {
   /** Mock の URL。省略すると環境変数 `DISMOCK_URL`、`data/discord-mock-state.json` の順に探す。 */
   mockUrl?: string;
-  /** Mock のトークン。省略すると環境変数 `DISMOCK_TOKEN`、`data/discord-mock-state.json` の順に探す。 */
+  /**
+   * Mock のトークン。Bot が `client.login` にトークンを渡さないときは、この指定が必須。
+   * 省略すると接続先の認証には環境変数 `DISMOCK_TOKEN`、`data/discord-mock-state.json` の順に探す。
+   */
   token?: string;
   /** Client を公開していない Bot のエントリーファイル。読み込むと Bot が起動する。 */
   entry?: string;
@@ -114,7 +117,7 @@ function isOptions(value: unknown): value is TestClientOptions {
  *   }
  * }
  *
- * export const testClient = new MyTestBotClient(client);
+ * export const testClient = new MyTestBotClient(client, { token: disMock.connection().token });
  * ```
  */
 export class TestClient {
@@ -197,9 +200,8 @@ export class TestClient {
     if (this.options.entry) await this.loadEntry();
     const bot = this.client;
     if (!bot.isReady() && !this.options.entry) {
-      const { url, token } = connection();
-      bot.rest.options.api = `${url}/api`;
-      await bot.login(token);
+      bot.rest.options.api = `${connection().url}/api`;
+      await bot.login();
     }
     await this.waitUntilReady(bot);
   }
@@ -399,7 +401,7 @@ export class TestClient {
  * ```ts
  * import * as disMock from '@dismock/client';
  *
- * export const testClient = disMock.testClient({ entry: 'src/index.ts' });
+ * export const testClient = disMock.testClient({ entry: 'src/index.ts', token: disMock.connection().token });
  * ```
  */
 export function testClient(client: BotClient | TestClientOptions, options?: TestClientOptions): TestClient & BotClient {

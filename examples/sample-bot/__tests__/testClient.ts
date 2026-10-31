@@ -3,6 +3,7 @@ import * as disMock from '@dismock/client';
 // Bot のソースコードは一切変更していない。
 export const testClient = disMock.testClient({
   entry: 'src/index.ts',
+  token: disMock.connection().token,
   setupDb: async () => {
     await disMock.db.pg().query(`
       CREATE TABLE levels (user_id text PRIMARY KEY, level integer NOT NULL DEFAULT 0)
