@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DEFAULT_USERS } from './constants.js';
 
@@ -127,6 +127,19 @@ export function snowflake(): string {
   return String((timestamp << 22n) | sequence);
 }
 
+const CUSTOM_TOKEN = /^[\w.-]{16,}$/;
+
+/** URL に入れられる値だけを受け付け、本物の Bot のトークンと同じ形の値は保存しない。 */
+function assertCustomToken(token: string): void {
+  if (!CUSTOM_TOKEN.test(token)) {
+    throw new Error('トークンは英数字、`-`、`_`、`.` を使い、16 文字以上で指定してください');
+  }
+  const segments = token.split('.');
+  if (segments.length === 3 && segments[1] !== 'mock') {
+    throw new Error('本物の Bot のトークンと同じ形式の値は Mock のトークンに指定できません');
+  }
+}
+
 function emptyState(): MockState {
   const botUserId = snowflake();
   const secret = randomBytes(20).toString('base64url');
@@ -164,9 +177,14 @@ export class Store extends EventEmitter {
   state: MockState;
   private saveTimer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly file?: string) {
+  constructor(
+    private readonly file?: string,
+    token?: string,
+  ) {
     super();
+    if (token) assertCustomToken(token);
     this.state = file && existsSync(file) ? this.load(file) : emptyState();
+    if (token) this.state.token = token;
     // ポートの競合などで起動に失敗しても、トークンは発行済みの状態にする。
     this.flush();
   }
@@ -197,8 +215,11 @@ export class Store extends EventEmitter {
     this.saveTimer = null;
     if (!this.file) return;
     mkdirSync(dirname(this.file), { recursive: true });
+    // testClient が同時に読むので、書き込み途中の内容が見えないよう置き換える。
     // トークンを含むため、所有者以外は読めないようにする。
-    writeFileSync(this.file, JSON.stringify(this.state, null, 2), { mode: 0o600 });
+    const temporary = `${this.file}.tmp`;
+    writeFileSync(temporary, JSON.stringify(this.state, null, 2), { mode: 0o600 });
+    renameSync(temporary, this.file);
   }
 
   private dispatch(event: string, data: Json): void {

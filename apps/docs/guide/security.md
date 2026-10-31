@@ -17,7 +17,7 @@ Mock は本物の Discord に接続せず、外部との通信も行いません
 - トークンは `data/discord-mock-state.json` に保存され、画面の URL にも含まれます。
 - `data/` はコミットせず、URL も共有しないでください。
 - REST API、Gateway、`/api/mock` はトークンを検証し、一致しなければ拒否します。
-- 本物の Bot のトークンは使いません。テストでは Mock のトークンに差し替わります。
+- 本物の Bot のトークンは Mock に送られません。`client.login` に Mock のものではないトークンが渡されると、送信せずに起動エラーにします。
 
 ## DM
 

@@ -65,6 +65,30 @@ URL とトークンは、次の順に探します。通常は指定する必要�
 
 トークンが一致しない、Mock に接続できない、Bot や DB の準備に失敗したときは、起動エラー（[StartupError](../api/client/class/StartupError.md)）になります。起動エラーはテストの失敗とは区別され、`pnpm app` は Mock も含めて終了します。
 
+## Bot のトークン
+
+テストでは `client.login` に渡された値で接続先を判定します。Bot がトークンを `.env`、ハードコード、JSON のどこに持っていても同じです。
+
+| `client.login` に渡された値 | 動作 |
+|---|---|
+| Mock のトークン | Mock に接続する |
+| なし | Mock のトークンで Mock に接続する |
+| それ以外（本物のトークンなど） | どこにも送らず、起動エラーにする |
+
+本物の Discord と使い分けるときは、たとえば `.env` の値を切り替えます。
+
+```sh
+# 本物の Discord に接続するとき
+# DISCORD_TOKEN=本物のトークン
+
+# Mock に接続するとき
+DISCORD_TOKEN=my-mock-token-0001
+```
+
+`.env` は dismock が読み込むのではなく、Bot が自分で読み込みます。Mock のトークンは、画面の URL の `#token=` の後ろか `data/discord-mock-state.json` で確認できます。自分で決めることもできます。[コマンド](./cli.md#dismock-server)を参照してください。
+
+1 つの Mock のトークンは 1 つなので、複数の Bot をテストするときは同じ値を指定します。
+
 ## 本物の Client を使う
 
 testClient は Mock の操作と本物の Client の両方を持ちます。`users` のように名前が重なるものは Mock の操作を優先するので、本物の Client のものは `bot.client` から使います。

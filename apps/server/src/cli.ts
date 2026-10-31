@@ -7,6 +7,7 @@ const { values } = parseArgs({
     host: { type: 'string', default: DEFAULT_HOST },
     port: { type: 'string', default: String(DEFAULT_PORT) },
     data: { type: 'string', default: 'data/discord-mock-state.json' },
+    token: { type: 'string', default: process.env.DISMOCK_TOKEN },
   },
 });
 
@@ -14,6 +15,7 @@ const server = await startServer({
   host: values.host,
   port: Number(values.port),
   dataFile: values.data,
+  token: values.token,
   webDir: fileURLToPath(new URL('../../web/dist', import.meta.url)),
   clearOnStart: true,
   seedDefaults: true,

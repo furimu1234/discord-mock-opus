@@ -20,6 +20,8 @@ export interface MockServerOptions {
   port?: number;
   /** 状態を保存する JSON ファイル。省略するとメモリ上にのみ保持する。 */
   dataFile?: string;
+  /** 開発者が指定する Mock のトークン。省略すると保存済みの値を使い、なければ発行する。 */
+  token?: string;
   /** Web UI のビルド結果のディレクトリ。 */
   webDir?: string;
   /** トークン以外のデータを消してから起動する。 */
@@ -36,7 +38,7 @@ export interface MockServer {
 
 export async function startServer(options: MockServerOptions = {}): Promise<MockServer> {
   const host = options.host ?? DEFAULT_HOST;
-  const store = new Store(options.dataFile);
+  const store = new Store(options.dataFile, options.token);
   let url = '';
 
   const gatewayUrl = () => `${url.replace(/^http/, 'ws')}/gateway`;

@@ -1,6 +1,6 @@
 import { createRequire, registerHooks } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { connection } from './connection.js';
+import { connection, StartupError } from './connection.js';
 import { runtime } from './runtime.js';
 
 /**
@@ -27,6 +27,7 @@ interface RestLike {
 
 interface DiscordClientLike {
   rest: RestLike;
+  token: string | null;
   login(token?: string): Promise<string>;
 }
 
@@ -34,6 +35,11 @@ interface ModuleExports {
   REST?: { prototype: { queueRequest(request: unknown): Promise<unknown> } & RestLike };
   Client?: { prototype: DiscordClientLike };
 }
+
+/** discord.js の login と同じように、先頭の種別を取り除いて比較する。 */
+const TOKEN_PREFIX = /^(Bot|Bearer)\s*/i;
+const TOKEN_MISMATCH =
+  'client.login に渡されたトークンが Mock のトークンと一致しません。トークンは送信していません。Mock のトークンに切り替えてください';
 
 const patched = new Set<string>();
 
@@ -52,10 +58,11 @@ function patchRest({ REST }: ModuleExports): void {
 function patchClient({ Client }: ModuleExports): void {
   if (!Client) return;
   const { login } = Client.prototype;
-  // 本物のトークンは使わず、Mock が発行したトークンでログインする。
-  Client.prototype.login = async function (this: DiscordClientLike) {
-    runtime.loginClients.push(this);
+  // Bot が指定したトークンが Mock のものでなければ、どこにも送らずに起動を止める。
+  Client.prototype.login = async function (this: DiscordClientLike, botToken: string | null = this.token) {
     const { url, token } = connection();
+    if (botToken && botToken.replace(TOKEN_PREFIX, '') !== token) throw new StartupError(TOKEN_MISMATCH);
+    runtime.loginClients.push(this);
     this.rest.options.api = `${url}/api`;
     return login.call(this, token);
   };

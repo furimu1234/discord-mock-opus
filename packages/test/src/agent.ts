@@ -129,9 +129,14 @@ async function stopBot(): Promise<void> {
   await stopped;
 }
 
+function abortStartup(error: Error): never {
+  console.error(`起動エラー: ${error.message}`);
+  process.exit(EXIT_STARTUP_FAILURE);
+}
+
 async function switchBot(project: Project): Promise<void> {
   await stopBot();
-  await startBot(project).catch((error: Error) => console.error(error.message));
+  await startBot(project).catch(abortStartup);
 }
 
 /** Bot のプロセスの中でテストを実行する。DB を引き継ぐため、そのプロジェクトの Bot に接続する。 */
@@ -215,8 +220,7 @@ export async function runAgent(dirs: string[]): Promise<void> {
       await registerAll(projects);
       await writeUserTypes();
     } catch (error) {
-      console.error(`起動エラー: ${(error as Error).message}`);
-      process.exit(EXIT_STARTUP_FAILURE);
+      abortStartup(error as Error);
     }
     console.log(`testClient: ${projects.map((project) => project.name).join(', ')}`);
     await subscribe(onEvent).catch(() => {});

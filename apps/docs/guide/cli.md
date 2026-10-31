@@ -22,10 +22,21 @@ Mock を起動します。
 | `--host` | `127.0.0.1` | バインド先 |
 | `--port` | `6470` | ポート |
 | `--data` | `data/discord-mock-state.json` | 状態を保存する JSON |
+| `--token` | `DISMOCK_TOKEN` の値 | Mock のトークン |
 
 `--host` を変更する前に、[セキュリティ](./security.md)を読んでください。
 
 起動するとトークンを発行して JSON に保存します。JSON に値があるときは、そのトークンを使い回します。
+
+トークンは自分で決めることもできます。指定した値は JSON に保存され、次回からは指定しなくても使われます。
+
+```sh
+pnpm web --token my-mock-token-0001
+pnpm app --token my-mock-token-0001
+DISMOCK_TOKEN=my-mock-token-0001 pnpm web
+```
+
+値は英数字、`-`、`_`、`.` で 16 文字以上にしてください。本物の Bot のトークンと同じ形式の値は起動エラーになります。
 
 ## dismock
 

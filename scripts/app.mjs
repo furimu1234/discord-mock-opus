@@ -17,7 +17,7 @@ if (build.status !== 0) fail('ビルドに失敗しました');
 // ビルドで生成されるため、ビルドの後に読み込む。
 const { EXIT_STARTUP_FAILURE } = await import('../packages/test/dist/constants.js');
 
-const mock = spawn(process.execPath, ['apps/server/bin/dismock-server.js'], {
+const mock = spawn(process.execPath, ['apps/server/bin/dismock-server.js', ...process.argv.slice(2)], {
   cwd: ROOT,
   stdio: ['ignore', 'pipe', 'inherit'],
 });
