@@ -1,0 +1,20 @@
+{
+  "name": "sample-bot",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "dismock test", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "discord.js": "^14.28.0",
+    "drizzle-orm": "^0.45.4",
+    "googleapis": "^189.0.0",
+    "mysql2": "^3.24.6",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@dismock/client": "workspace:*",
+    "@dismock/test": "workspace:*",
+    "@types/better-sqlite3": "^7",
+    "@types/pg": "^8"
+  }
+}

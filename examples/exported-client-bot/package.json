@@ -1,0 +1,12 @@
+{
+  "name": "exported-client-bot",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "dismock test", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "dependencies": { "discord.js": "^14.28.0", "pg": "^8.23.1" },
+  "devDependencies": {
+    "@dismock/client": "workspace:*",
+    "@dismock/test": "workspace:*",
+    "@types/pg": "^8"
+  }
+}

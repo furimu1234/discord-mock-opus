@@ -1,0 +1,119 @@
+import type { Actor, PrepareOptions, TestClient, TestSeed } from '@dismock/client';
+import { db } from '@dismock/client';
+
+export { expect } from './expect.js';
+export type { PollOptions } from './expect.js';
+export { fn, spyOn } from 'jest-mock';
+
+export interface TestContext {
+  bot: TestClient;
+  user: Record<string, any>;
+  actor: Actor;
+  guild: Record<string, any>;
+  channel: Record<string, any>;
+  seeded: Record<string, any>;
+  db: typeof db;
+}
+
+export interface TestOptions extends PrepareOptions {
+  /** テストの制限時間。既定は 5000ms。 */
+  timeout?: number;
+  seed?: TestSeed;
+}
+
+export type TestFn = (context: TestContext) => unknown;
+export type HookFn = (context: TestContext) => unknown;
+
+type Mode = 'run' | 'skip' | 'only' | 'todo';
+
+export interface TestCase {
+  name: string;
+  fn?: TestFn;
+  options: TestOptions;
+  mode: Mode;
+}
+
+export interface Suite {
+  name: string;
+  mode: Mode;
+  parent?: Suite;
+  tests: TestCase[];
+  suites: Suite[];
+  beforeAll: HookFn[];
+  afterAll: HookFn[];
+  beforeEach: HookFn[];
+  afterEach: HookFn[];
+}
+
+export function createSuite(name: string, mode: Mode = 'run', parent?: Suite): Suite {
+  return { name, mode, parent, tests: [], suites: [], beforeAll: [], afterAll: [], beforeEach: [], afterEach: [] };
+}
+
+const KEY = Symbol.for('dismock.test.current');
+type Global = typeof globalThis & { [KEY]?: Suite };
+
+export function setCurrentSuite(suite: Suite): void {
+  (globalThis as Global)[KEY] = suite;
+}
+
+function currentSuite(): Suite {
+  const suite = (globalThis as Global)[KEY];
+  if (!suite) throw new Error('@dismock/test: テストは `dismock test` で実行してください');
+  return suite;
+}
+
+function defineSuite(name: string, body: () => void, mode: Mode): void {
+  const parent = currentSuite();
+  const suite = createSuite(name, mode, parent);
+  parent.suites.push(suite);
+  setCurrentSuite(suite);
+  try {
+    body();
+  } finally {
+    setCurrentSuite(parent);
+  }
+}
+
+export const describe = Object.assign((name: string, body: () => void) => defineSuite(name, body, 'run'), {
+  skip: (name: string, body: () => void) => defineSuite(name, body, 'skip'),
+  only: (name: string, body: () => void) => defineSuite(name, body, 'only'),
+});
+
+function defineTest(name: string, second: TestOptions | TestFn | undefined, third: TestFn | undefined, mode: Mode): void {
+  const options = typeof second === 'object' ? second : {};
+  const fn = typeof second === 'function' ? second : third;
+  currentSuite().tests.push({ name, fn, options, mode });
+}
+
+interface TestApi {
+  (name: string, fn: TestFn): void;
+  (name: string, options: TestOptions, fn: TestFn): void;
+}
+
+const modeTest =
+  (mode: Mode): TestApi =>
+  (name: string, second: TestOptions | TestFn, third?: TestFn) =>
+    defineTest(name, second, third, mode);
+
+function each<T>(cases: readonly T[]) {
+  return (name: string, fn: (item: T, context: TestContext) => unknown, options: TestOptions = {}) => {
+    cases.forEach((item, index) => {
+      const title = name.replace('%s', String(item)).replace('%i', String(index));
+      defineTest(title, options, (context) => fn(item, context), 'run');
+    });
+  };
+}
+
+export const test = Object.assign(modeTest('run'), {
+  skip: modeTest('skip'),
+  only: modeTest('only'),
+  todo: (name: string) => defineTest(name, undefined, undefined, 'todo'),
+  each,
+});
+
+export const it = test;
+
+export const beforeAll = (fn: HookFn) => void currentSuite().beforeAll.push(fn);
+export const afterAll = (fn: HookFn) => void currentSuite().afterAll.push(fn);
+export const beforeEach = (fn: HookFn) => void currentSuite().beforeEach.push(fn);
+export const afterEach = (fn: HookFn) => void currentSuite().afterEach.push(fn);

@@ -1,0 +1,18 @@
+{
+  "name": "@dismock/client",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./register": { "default": "./dist/register.js" },
+    "./shims/*": { "default": "./dist/shims/*.js" }
+  },
+  "files": ["dist"],
+  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "dependencies": {
+    "@dismock/server": "workspace:*",
+    "@electric-sql/pglite": "^0.5.14"
+  },
+  "peerDependencies": { "discord.js": "^14" },
+  "devDependencies": { "discord.js": "^14.28.0" }
+}

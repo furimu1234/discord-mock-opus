@@ -16,20 +16,38 @@ Discord Bot のテストを自動化するための Discord モックです。Bo
 
 同じ内容を複数のファイルに書かず、他のファイルの内容はリンクで参照してください。
 
+## 開発環境
+
+すべてのコマンドは `nix-shell` の中で実行してください。Node.js、pnpm、Python は [shell.nix](shell.nix) で固定しています。pnpm のストア、キャッシュ、一時ファイルは `.local/` に、Python の仮想環境は `.venv/` に置きます。
+
+```sh
+nix-shell
+pnpm install
+pnpm build       # apps と packages をビルドする
+pnpm test        # ビルドして examples のテストを実行する
+pnpm typecheck   # 型チェック
+pnpm server      # Mock サーバーを起動する（既定は 127.0.0.1:6464）
+```
+
+`examples/*` のテストは `packages/*/dist` を参照します。`apps` や `packages` を変更したら、ビルドしてからテストしてください。
+
 ## 現在の状態
 
-実装はまだありません。パッケージマネージャー、ビルド、テスト、Lint のコマンドは未定です。導入したら本書に追記してください。
+実装済みのものと未実装のものは次のとおりです。
+
+- 実装済み: REST API と Gateway のエミュレータ、`testClient`、テストランナーとテスト DSL、インメモリ DB（pg、mysql、sqlite、スプレッドシート）
+- 未実装: Web UI（テスト画面、管理画面、DB Studio）、音声の送受信（`VOICE_SERVER_UPDATE` と Voice Gateway）、`registerSchema`、Python 用ライブラリ
 
 ## 構成
 
-次のモノレポ構成を予定しています。
-
-| パス | 責務 |
-|---|---|
-| `apps/server` | REST API と Gateway のエミュレータ、JSON への永続化 |
-| `apps/web` | テスト画面、管理画面、DB Studio |
-| `packages/client-js` | `testClient`、インメモリ DB エミュレータ |
-| `packages/test` | テストランナーとテスト DSL |
+| パス | パッケージ | 責務 |
+|---|---|---|
+| `apps/server` | `@dismock/server` | REST API と Gateway のエミュレータ、JSON への永続化 |
+| `apps/web` | 未作成 | テスト画面、管理画面、DB Studio |
+| `packages/client-js` | `@dismock/client` | `testClient`、インメモリ DB、`import` を差し替えるフック |
+| `packages/test` | `@dismock/test` | テストランナーとテスト DSL |
+| `examples/sample-bot` | | Client を公開しない Bot。全機能の動作確認を兼ねる |
+| `examples/exported-client-bot` | | Client を公開する Bot と CommonJS の動作確認 |
 
 ## 絶対に守ること
 
@@ -42,5 +60,6 @@ Discord Bot のテストを自動化するための Discord モックです。Bo
 
 ## 作業のルール
 
+- Bot 側のソースコードを変更しなくても動くことを保ってください。`examples/*/src` は Bot のコードとして扱い、モックの都合で書き換えないでください。
 - 機能を実装する前に、[CLAUDE.md](CLAUDE.md) の該当する節を確認してください。画面を実装する場合は [DESIGN.md](DESIGN.md) も確認してください。
 - 実装で仕様が決まったら、[CLAUDE.md](CLAUDE.md) 5 章と [DESIGN.md](DESIGN.md) の未決定の事項を更新してください。

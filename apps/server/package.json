@@ -1,0 +1,11 @@
+{
+  "name": "@dismock/server",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "bin": { "dismock-server": "./bin/dismock-server.js" },
+  "files": ["bin", "dist"],
+  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "dependencies": { "ws": "^8.22.1" },
+  "devDependencies": { "@types/ws": "^8.18.2" }
+}

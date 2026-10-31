@@ -1,0 +1,14 @@
+packages:
+  - apps/*
+  - packages/*
+  - examples/*
+allowBuilds:
+  # 型定義のためだけに入れており、実行時は node:sqlite のシムを使う。
+  better-sqlite3: false
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@discordjs/builders@1.15.0'
+  - '@electric-sql/pglite@0.5.14'
+  - discord.js@14.28.0
+  - googleapis@189.0.0
+  - ws@8.22.1
