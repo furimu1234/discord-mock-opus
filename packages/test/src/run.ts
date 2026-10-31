@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { closeEngines, connection, db, runtime, StartupError, type TestClient } from '@dismock/client';
+import { closeEngines, connection, db, runtime, snapshotEngines, StartupError, type TestClient } from '@dismock/client';
 import { createSuite, setCurrentSuite, type HookFn, type Suite, type TestCase, type TestContext } from './index.js';
 
 const DEFAULT_TIMEOUT_MS = 5000;
@@ -8,6 +8,7 @@ const DEFAULT_TIMEOUT_MS = 5000;
 const EXIT_STARTUP_FAILURE = 2;
 const MARK_LIST = '__DISMOCK_LIST__';
 const MARK_READY = '__DISMOCK_READY__';
+const LIVE_DB_INTERVAL_MS = 1000;
 
 interface RunConfig {
   mode?: 'run' | 'list' | 'bot';
@@ -79,14 +80,44 @@ function baseContext(): TestContext {
   return context as TestContext;
 }
 
-function report(id: string, result: { status: string; durationMs?: number; error?: string }): Promise<unknown> {
-  if (!config.project) return Promise.resolve();
+function post(path: string, body: unknown): Promise<unknown> {
   const { url, token } = connection();
-  return fetch(`${url}/api/mock/tests/report`, {
+  return fetch(`${url}/api/mock${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bot ${token}` },
-    body: JSON.stringify({ project: config.project, id, result }),
+    body: JSON.stringify(body),
   });
+}
+
+interface TestReport {
+  status: string;
+  durationMs?: number;
+  error?: string;
+}
+
+function report(id: string, result: TestReport): Promise<unknown> {
+  if (!config.project) return Promise.resolve();
+  return post('/tests/report', { project: config.project, id, result });
+}
+
+/** テストの結果に、終了時の DB の内容を添えて報告する。次のテストの前に DB は空になる。 */
+async function reportFinished(id: string, result: TestReport): Promise<unknown> {
+  if (!config.project) return;
+  return post('/tests/report', { project: config.project, id, result, db: await snapshotEngines() });
+}
+
+/** 接続中の Bot の DB に変化があれば、DB Studio へ送る。 */
+function publishLiveDb(): void {
+  let last: string | undefined;
+  const publish = async () => {
+    const snapshot = JSON.stringify(await snapshotEngines());
+    if (snapshot === last) return;
+    last = snapshot;
+    await post('/db/live', { project: config.project, db: JSON.parse(snapshot) });
+  };
+  const run = () => publish().catch((error: unknown) => console.error(error));
+  void run();
+  setInterval(run, LIVE_DB_INTERVAL_MS);
 }
 
 async function runTest(test: TestCase, suite: Suite, title: string, id: string, context: TestContext): Promise<void> {
@@ -110,14 +141,14 @@ async function runTest(test: TestCase, suite: Suite, title: string, id: string, 
     }, timeoutMs);
     totals.passed += 1;
     console.log(`  ✓ ${title}`);
-    await report(id, { status: 'passed', durationMs: Date.now() - startedAt });
+    await reportFinished(id, { status: 'passed', durationMs: Date.now() - startedAt });
   } catch (error) {
     if (error instanceof StartupError) abortStartup(error);
     totals.failed += 1;
     totals.failures.push({ title, error });
     console.log(`  ✕ ${title}`);
     const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-    await report(id, { status: 'failed', durationMs: Date.now() - startedAt, error: message });
+    await reportFinished(id, { status: 'failed', durationMs: Date.now() - startedAt, error: message });
   }
 }
 
@@ -186,6 +217,7 @@ async function main(): Promise<number> {
   if (config.mode === 'bot') {
     if (!testClient) throw new StartupError('testClient.ts が見つかりません');
     await testClient.serve();
+    publishLiveDb();
     console.log(MARK_READY);
     return new Promise<number>(() => {});
   }

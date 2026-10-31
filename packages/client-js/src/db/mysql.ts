@@ -1,7 +1,7 @@
 import type { StatementSync } from 'node:sqlite';
 import { countPlaceholders, expandParameters, splitStatements, translate } from './mysql-translate.js';
 import { isDuplicateError, SqliteCore, toBindable } from './sqlite-core.js';
-import type { Engine, Row, SeedData } from './types.js';
+import type { DbTable, Engine, Row, SeedData } from './types.js';
 
 const ER_DUP_ENTRY = 1062;
 const ER_NO_SUCH_TABLE = 1146;
@@ -190,6 +190,10 @@ export class MysqlEngine implements Engine {
 
   seed(data: SeedData): void {
     this.core.seed(data);
+  }
+
+  snapshot(): DbTable[] {
+    return this.core.snapshot();
   }
 
   async reset(): Promise<void> {

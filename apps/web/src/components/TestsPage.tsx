@@ -28,6 +28,8 @@ interface TestListProps {
   /** 右パネルに収める表示。 */
   compact?: boolean;
   onError: (message: string) => void;
+  /** テスト終了時の DB を DB Studio で開く。 */
+  onOpenDb: (project: string, id: string) => void;
 }
 
 interface TestGroup {
@@ -65,12 +67,12 @@ function GroupCheckbox({ checked, indeterminate, disabled, onChange, label }: {
   );
 }
 
-function TestList({ tests, selection, compact = false, onError }: TestListProps) {
+function TestList({ tests, selection, compact = false, onError, onOpenDb }: TestListProps) {
   const { projectName, setProjectName, selected, setSelected } = selection;
   const projects = (tests?.projects ?? []) as Json[];
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const project = projects.find((p) => p.name === projectName) ?? projects[0];
+  const project = (projects.find((p) => p.name === projectName) ?? projects[0]) as Json;
   const results = (tests?.results?.[project?.name] ?? {}) as Record<string, Json>;
   const running = Boolean(tests?.runningProject);
   const groups = useMemo(() => groupTests(project?.tests ?? []), [project]);
@@ -178,6 +180,9 @@ function TestList({ tests, selection, compact = false, onError }: TestListProps)
                       {test.skipped && <span className="status skipped">スキップ</span>}
                       {result && <span className={`status ${result.status}`}>{STATUS_LABELS[result.status]}</span>}
                       {result?.durationMs !== undefined && <small>{result.durationMs}ms</small>}
+                      {result?.hasDb && (
+                        <button className="db-link" aria-label={`${test.name} の DB を開く`} onClick={() => onOpenDb(project?.name, test.id)}>DB</button>
+                      )}
                     </div>
                     {failed && expanded === test.id && <pre className="test-error">{result.error}</pre>}
                   </div>

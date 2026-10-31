@@ -1,4 +1,4 @@
-import type { Engine } from './types.js';
+import { SNAPSHOT_ROW_LIMIT, type DbTable, type Engine } from './types.js';
 
 export type CellValue = string | number | boolean | null;
 export type SheetSeed = Record<string, Record<string, CellValue[][]>>;
@@ -269,6 +269,27 @@ export class SheetsEngine implements Engine {
   /** テストコードからセルの値を読み取る。 */
   values(spreadsheetId: string, range: string, options?: ValueOptions): CellValue[][] {
     return this.getValues(spreadsheetId, range, options).values ?? [];
+  }
+
+  snapshot(): DbTable[] {
+    return [...this.spreadsheets.values()].flatMap((spreadsheet) =>
+      spreadsheet.sheets.map((sheet) => {
+        const width = Math.max(0, ...sheet.cells.map((row) => row.length));
+        const columns = Array.from({ length: width }, (_, i) => ({
+          name: columnLetters(i),
+          type: 'cell',
+          primaryKey: false,
+        }));
+        return {
+          name: `${spreadsheet.spreadsheetId} / ${sheet.title}`,
+          columns,
+          rows: sheet.cells
+            .slice(0, SNAPSHOT_ROW_LIMIT)
+            .map((row) => Object.fromEntries(columns.map((column, i) => [column.name, row[i] ?? null]))),
+          total: sheet.cells.length,
+        };
+      }),
+    );
   }
 
   async reset(): Promise<void> {

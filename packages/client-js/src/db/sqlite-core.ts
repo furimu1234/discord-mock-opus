@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import type { Row, SeedData } from './types.js';
+import { SNAPSHOT_ROW_LIMIT, type DbTable, type Row, type SeedData } from './types.js';
 
 const identifier = (name: string) => `"${name.replaceAll('"', '""')}"`;
 
@@ -33,6 +33,24 @@ export class SqliteCore {
 
   rows(table: string): Row[] {
     return this.db.prepare(`SELECT * FROM ${identifier(table)}`).all() as Row[];
+  }
+
+  snapshot(): DbTable[] {
+    return this.tables().map((name) => {
+      const quoted = identifier(name);
+      const columns = this.db.prepare('SELECT name, type, pk FROM pragma_table_info(?)').all(name) as {
+        name: string;
+        type: string;
+        pk: number;
+      }[];
+      const { total } = this.db.prepare(`SELECT count(*) AS total FROM ${quoted}`).get() as { total: number };
+      return {
+        name,
+        columns: columns.map((column) => ({ name: column.name, type: column.type, primaryKey: column.pk > 0 })),
+        rows: this.db.prepare(`SELECT * FROM ${quoted} LIMIT ${SNAPSHOT_ROW_LIMIT}`).all() as Row[],
+        total,
+      };
+    });
   }
 
   seed(data: SeedData): void {

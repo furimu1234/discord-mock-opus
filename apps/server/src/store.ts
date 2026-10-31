@@ -176,6 +176,13 @@ export class Store extends EventEmitter {
     this.changed();
   }
 
+  /** 起動時に、トークンと Bot のユーザー以外のすべてのデータを消す。 */
+  clearAll(): void {
+    this.reset();
+    this.state.commands = [];
+    this.flush();
+  }
+
   /** テストの開始時に状態を退避する。実行中に JSON のダミーデータは変わらない。 */
   beginTestSession(): void {
     this.saved ??= structuredClone(this.state);

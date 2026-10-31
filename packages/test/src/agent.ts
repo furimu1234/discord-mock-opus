@@ -68,7 +68,7 @@ async function registerAll(projects: Project[]): Promise<void> {
 
 /** Bot を起動して、接続が完了するまで待つ。 */
 function startBot(project: Project): Promise<void> {
-  const child = spawnRunner(project.dir, { ...config(project), mode: 'bot' }, 'pipe');
+  const child = spawnRunner(project.dir, { ...config(project), mode: 'bot', project: project.name }, 'pipe');
   bot = { project: project.name, child };
   return new Promise((ready, failed) => {
     readLines(child, (line) => {

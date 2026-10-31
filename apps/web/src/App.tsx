@@ -4,13 +4,14 @@ import { AdminPage } from './components/AdminPage';
 import { Avatar, colorOf, displayName } from './components/Avatar';
 import { Composer } from './components/Composer';
 import {
-  BeakerIcon, ChatIcon, ChevronIcon, GearIcon, HangUpIcon, HashIcon, PlusIcon, SpeakerIcon, UsersIcon,
+  BeakerIcon, ChatIcon, ChevronIcon, DatabaseIcon, GearIcon, HangUpIcon, HashIcon, PlusIcon, SpeakerIcon, UsersIcon,
 } from './components/Icons';
 import { Message } from './components/Message';
 import { ModalDialog } from './components/ModalDialog';
+import { StudioPage, type StudioSource } from './components/StudioPage';
 import { TestsPage, TestsPanel, useTestSelection, type TestSelection } from './components/TestsPage';
 
-type View = { kind: 'guild'; guildId: string } | { kind: 'dm' } | { kind: 'tests' } | { kind: 'admin' };
+type View = { kind: 'guild'; guildId: string } | { kind: 'dm' } | { kind: 'tests' } | { kind: 'studio' } | { kind: 'admin' };
 type PanelTab = 'members' | 'tests';
 
 const TEXT = 0;
@@ -40,6 +41,7 @@ function ServerRail({ view, guilds, onSelect }: { view: View; guilds: Json[]; on
       <div className="rail-spacer" />
       <div className="rail-separator" />
       {railButton('tests', 'テスト', view.kind === 'tests', { kind: 'tests' }, <BeakerIcon />)}
+      {railButton('studio', 'DB Studio', view.kind === 'studio', { kind: 'studio' }, <DatabaseIcon />)}
       {railButton('admin', '管理', view.kind === 'admin', { kind: 'admin' }, <GearIcon />)}
     </nav>
   );
@@ -143,7 +145,7 @@ function UserPanel({ state, activeUser, voice, onLeaveVoice, onError }: {
   );
 }
 
-function SidePanel({ tab, onTab, guild, state, tests, selection, onError }: {
+function SidePanel({ tab, onTab, guild, state, tests, selection, onError, onOpenDb }: {
   tab: PanelTab;
   onTab: (tab: PanelTab) => void;
   guild?: Json;
@@ -151,6 +153,7 @@ function SidePanel({ tab, onTab, guild, state, tests, selection, onError }: {
   tests: Json | null;
   selection: TestSelection;
   onError: (message: string) => void;
+  onOpenDb: (project: string, id: string) => void;
 }) {
   // DM にメンバーの一覧はないため、テストケースだけを表示する。
   const active = guild ? tab : 'tests';
@@ -169,7 +172,7 @@ function SidePanel({ tab, onTab, guild, state, tests, selection, onError }: {
       <div className="panel-body" role="tabpanel">
         {active === 'members' && guild
           ? <MemberList guild={guild} state={state} />
-          : <TestsPanel tests={tests} selection={selection} onError={onError} />}
+          : <TestsPanel tests={tests} selection={selection} onError={onError} onOpenDb={onOpenDb} />}
       </div>
     </aside>
   );
@@ -285,6 +288,7 @@ export function App() {
   const [showPanel, setShowPanel] = useState(true);
   const [panelTab, setPanelTab] = useState<PanelTab>('members');
   const selection = useTestSelection();
+  const [studioSource, setStudioSource] = useState<StudioSource>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -332,8 +336,13 @@ export function App() {
   const openDm = async () => (await api.post('/dm', { userId: activeUser?.id })).id as string;
 
   const showsChat = current.kind === 'guild' || current.kind === 'dm';
+  const openDb = (project: string, id: string) => {
+    setStudioSource({ project, id });
+    setView({ kind: 'studio' });
+  };
   const panel = (
-    <SidePanel tab={panelTab} onTab={setPanelTab} guild={guild} state={state} tests={tests} selection={selection} onError={onError} />
+    <SidePanel tab={panelTab} onTab={setPanelTab} guild={guild} state={state} tests={tests} selection={selection}
+      onError={onError} onOpenDb={openDb} />
   );
   const togglePanel = () => setShowPanel(!showPanel);
 
@@ -371,7 +380,8 @@ export function App() {
           channelId={dms[0]?.channel_id ?? null} activeUser={activeUser} placeholder="Bot へメッセージを送信"
           resolveChannel={openDm} onError={onError} panel={panel} showPanel={showPanel} onTogglePanel={togglePanel} />
       )}
-      {current.kind === 'tests' && <TestsPage tests={tests} selection={selection} onError={onError} />}
+      {current.kind === 'tests' && <TestsPage tests={tests} selection={selection} onError={onError} onOpenDb={openDb} />}
+      {current.kind === 'studio' && <StudioPage tests={tests} source={studioSource} onSource={setStudioSource} onError={onError} />}
       {current.kind === 'admin' && <AdminPage state={state} tests={tests} onError={onError} />}
       {toast && <div className="toast" role="alert">{toast}</div>}
       {!connected && <div className="toast warning" role="status">Mock との接続が切れました。再接続しています…</div>}

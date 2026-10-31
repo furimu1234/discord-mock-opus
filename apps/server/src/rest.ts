@@ -229,9 +229,14 @@ export class Rest {
       return { ok: true };
     });
     mock('POST', '/tests/report', ({ body }) => {
-      tests.report(body.project, body.id, body.result);
+      tests.report(body.project, body.id, body.result, body.db);
       return { ok: true };
     });
+    mock('POST', '/db/live', ({ body }) => {
+      tests.publishLiveDb(body.project, body.db);
+      return { ok: true };
+    });
+    mock('GET', '/db', ({ query }) => tests.readDb(query.get('project'), query.get('id')));
     mock('POST', '/tests/finish', ({ body }) => {
       store.endTestSession();
       tests.finish(body.activeBot ?? null);

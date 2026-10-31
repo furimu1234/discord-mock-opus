@@ -15,6 +15,7 @@ const server = await startServer({
   port: Number(values.port),
   dataFile: values.data,
   webDir: fileURLToPath(new URL('../../web/dist', import.meta.url)),
+  clearOnStart: true,
   seedDefaults: true,
 }).catch((error: Error) => {
   console.error(`Mock を起動できません: ${error.message}`);

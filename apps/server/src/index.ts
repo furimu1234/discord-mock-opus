@@ -20,6 +20,8 @@ export interface MockServerOptions {
   dataFile?: string;
   /** Web UI のビルド結果のディレクトリ。 */
   webDir?: string;
+  /** トークン以外のデータを消してから起動する。 */
+  clearOnStart?: boolean;
   /** ダミーデータが空のとき、初期データを投入する。 */
   seedDefaults?: boolean;
 }
@@ -40,6 +42,7 @@ export async function startServer(options: MockServerOptions = {}): Promise<Mock
   const interactions = new Interactions(store, (event, data) => gateway.broadcast(event, data));
   const tests = new TestRegistry(store);
   const rest = new Rest(store, interactions, tests, gatewayUrl, () => gateway.hasBot, options.webDir);
+  if (options.clearOnStart) store.clearAll();
   if (options.seedDefaults) store.seedDefaults();
 
   const server: Server = createServer((req, res) => void rest.handle(req, res));

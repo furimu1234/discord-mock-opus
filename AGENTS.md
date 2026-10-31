@@ -31,7 +31,7 @@ pnpm test:run    # 起動中の Mock に対して全テストを実行して終�
 pnpm typecheck   # 型チェック
 ```
 
-`pnpm web` と `pnpm app` は、ブラウザで開く URL をターミナルに表示します。`pnpm test` と `pnpm test:run` には起動中の Mock が必要です。`pnpm test:run` は testClient と Bot が重ならないよう、`pnpm web` だけを起動した状態で実行してください。
+`pnpm web` と `pnpm app` は、ブラウザで開く URL をターミナルに表示します。起動のたびにトークン以外のデータは消去されます。`pnpm test` と `pnpm test:run` には起動中の Mock が必要です。`pnpm test:run` は testClient と Bot が重ならないよう、`pnpm web` だけを起動した状態で実行してください。
 
 トークンは `data/discord-mock-state.json` に保存され、画面の URL にも含まれます。`data/` はコミットせず、URL も共有しないでください。
 
@@ -41,15 +41,15 @@ pnpm typecheck   # 型チェック
 
 実装済みのものと未実装のものは次のとおりです。
 
-- 実装済み: REST API と Gateway のエミュレータ、`testClient`、テストランナーとテスト DSL、インメモリ DB（pg、mysql、sqlite、スプレッドシート）、Web UI（テスト画面、管理画面）
-- 未実装: DB Studio、音声の送受信（`VOICE_SERVER_UPDATE` と Voice Gateway）、`registerSchema`、Python 用ライブラリ
+- 実装済み: REST API と Gateway のエミュレータ、`testClient`、テストランナーとテスト DSL、インメモリ DB（pg、mysql、sqlite、スプレッドシート）、Web UI（テスト画面、管理画面、DB Studio）
+- 未実装: 音声の送受信（`VOICE_SERVER_UPDATE` と Voice Gateway）、DB Studio での編集、Python 用ライブラリ
 
 ## 構成
 
 | パス | パッケージ | 責務 |
 |---|---|---|
 | `apps/server` | `@dismock/server` | REST API と Gateway のエミュレータ、JSON への永続化 |
-| `apps/web` | `@dismock/web` | テスト画面、管理画面（React、Vite）。Mock が同じ URL で配信する |
+| `apps/web` | `@dismock/web` | テスト画面、管理画面、DB Studio（React、Vite）。Mock が同じ URL で配信する |
 | `packages/client-js` | `@dismock/client` | `testClient`、インメモリ DB、`import` を差し替えるフック |
 | `packages/test` | `@dismock/test` | テストランナー、テスト DSL、画面からの実行を受けるエージェント |
 | `examples/sample-bot` | | Client を公開しない Bot。全機能の動作確認を兼ねる |

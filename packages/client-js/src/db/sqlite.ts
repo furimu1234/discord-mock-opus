@@ -1,5 +1,5 @@
 import { SqliteCore } from './sqlite-core.js';
-import type { Engine, Row, SeedData } from './types.js';
+import type { DbTable, Engine, Row, SeedData } from './types.js';
 
 /** node:sqlite で動くインメモリ DB。better-sqlite3 のシムから使う。 */
 export class SqliteEngine implements Engine {
@@ -24,6 +24,10 @@ export class SqliteEngine implements Engine {
 
   seed(data: SeedData): void {
     this.core.seed(data);
+  }
+
+  snapshot(): DbTable[] {
+    return this.core.snapshot();
   }
 
   async reset(): Promise<void> {

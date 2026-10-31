@@ -19,6 +19,8 @@ export interface TestResult {
   status: TestStatus;
   durationMs?: number;
   error?: string;
+  /** テスト終了時の DB の内容を DB Studio で見られる。 */
+  hasDb?: boolean;
 }
 
 /**
@@ -31,6 +33,10 @@ export class TestRegistry {
   runningProject: string | null = null;
   activeBot: string | null = null;
   agentConnected = false;
+  /** 接続中の Bot の DB。 */
+  private liveDb: { project: string; db: Json[]; updatedAt: string } | null = null;
+  /** テストケースごとの、終了時の DB。プロジェクトごとに直近の実行分だけを持つ。 */
+  private testDb: Record<string, Record<string, Json[]>> = {};
 
   constructor(private readonly store: Store) {}
 
@@ -40,7 +46,8 @@ export class TestRegistry {
 
   snapshot(): Json {
     const { projects, results, runningProject, activeBot, agentConnected } = this;
-    return { projects, results, runningProject, activeBot, agentConnected };
+    const liveDb = this.liveDb && { project: this.liveDb.project, updatedAt: this.liveDb.updatedAt };
+    return { projects, results, runningProject, activeBot, agentConnected, liveDb };
   }
 
   register(projects: TestProject[], activeBot: string | null): void {
@@ -54,6 +61,7 @@ export class TestRegistry {
     if (!connected) {
       this.runningProject = null;
       this.activeBot = null;
+      this.liveDb = null;
     }
     this.notify();
   }
@@ -64,13 +72,26 @@ export class TestRegistry {
     if (ids.length === 0) throw new Error('テストケースを選択してください');
     this.runningProject = project;
     this.results[project] = Object.fromEntries(ids.map((id) => [id, { status: 'queued' }]));
+    this.testDb[project] = {};
     this.notify();
     this.store.emit('ui', 'TEST_RUN', { project, ids });
   }
 
-  report(project: string, id: string, result: TestResult): void {
-    (this.results[project] ??= {})[id] = result;
+  report(project: string, id: string, result: TestResult, db?: Json[]): void {
+    (this.results[project] ??= {})[id] = { ...result, hasDb: Boolean(db?.length) };
+    if (db) (this.testDb[project] ??= {})[id] = db;
     this.notify();
+  }
+
+  publishLiveDb(project: string, db: Json[]): void {
+    this.liveDb = { project, db, updatedAt: new Date().toISOString() };
+    this.notify();
+  }
+
+  /** プロジェクトとテストケースを省略すると、接続中の Bot の DB を返す。 */
+  readDb(project: string | null, id: string | null): Json[] {
+    if (project && id) return this.testDb[project]?.[id] ?? [];
+    return this.liveDb?.db ?? [];
   }
 
   finish(activeBot: string | null): void {

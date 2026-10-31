@@ -1,5 +1,5 @@
 import type { PGlite, Results } from '@electric-sql/pglite';
-import type { Engine, Row, SeedData } from './types.js';
+import { SNAPSHOT_ROW_LIMIT, type DbTable, type Engine, type Row, type SeedData } from './types.js';
 
 const INT8_OID = 20;
 
@@ -86,6 +86,36 @@ export class PgEngine implements Engine {
         );
       }
     }
+  }
+
+  async snapshot(): Promise<DbTable[]> {
+    if (!this.database) return [];
+    const columns = await this.query<{ table_name: string; column_name: string; data_type: string }>(
+      `SELECT table_name, column_name, data_type FROM information_schema.columns
+       WHERE table_schema = 'public' ORDER BY table_name, ordinal_position`,
+    );
+    const keys = await this.query<{ table_name: string; column_name: string }>(
+      `SELECT k.table_name, k.column_name FROM information_schema.key_column_usage k
+       JOIN information_schema.table_constraints c USING (constraint_name, table_schema)
+       WHERE c.constraint_type = 'PRIMARY KEY' AND k.table_schema = 'public'`,
+    );
+    const tables = [];
+    for (const name of await this.tables()) {
+      const [count] = await this.query<{ total: string }>(`SELECT count(*) AS total FROM ${identifier(name)}`);
+      tables.push({
+        name,
+        columns: columns
+          .filter((column) => column.table_name === name)
+          .map((column) => ({
+            name: column.column_name,
+            type: column.data_type,
+            primaryKey: keys.some((key) => key.table_name === name && key.column_name === column.column_name),
+          })),
+        rows: await this.query(`SELECT * FROM ${identifier(name)} LIMIT ${SNAPSHOT_ROW_LIMIT}`),
+        total: Number(count!.total),
+      });
+    }
+    return tables;
   }
 
   async reset(): Promise<void> {
