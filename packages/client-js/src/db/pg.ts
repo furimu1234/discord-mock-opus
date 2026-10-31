@@ -3,11 +3,13 @@ import { SNAPSHOT_ROW_LIMIT, type DbTable, type Engine, type Row, type SeedData 
 
 const INT8_OID = 20;
 
+/** @internal */
 export interface PgQueryOptions {
   rowMode?: 'array';
   parsers?: Record<number, (value: string) => unknown>;
 }
 
+/** @internal */
 export interface PgResult {
   command: string;
   rowCount: number;
@@ -24,6 +26,7 @@ function isMultiStatementError(error: unknown): boolean {
 
 /** PGlite（WASM 版の PostgreSQL）で動くインメモリ DB。 */
 export class PgEngine implements Engine {
+  /** {@inheritDoc Engine.kind} */
   readonly kind = 'pg';
   private database?: Promise<PGlite>;
 
@@ -34,6 +37,7 @@ export class PgEngine implements Engine {
     return this.database;
   }
 
+  /** @internal */
   async execute(text: string, values: unknown[] = [], options: PgQueryOptions = {}): Promise<PgResult | PgResult[]> {
     const database = await this.open();
     try {
@@ -63,6 +67,7 @@ export class PgEngine implements Engine {
     return (Array.isArray(result) ? (result.at(-1)?.rows ?? []) : result.rows) as T[];
   }
 
+  /** テーブル名の一覧を返す。 */
   async tables(): Promise<string[]> {
     const rows = await this.query<{ tablename: string }>(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`,
@@ -70,10 +75,12 @@ export class PgEngine implements Engine {
     return rows.map((row) => row.tablename);
   }
 
+  /** テーブルのすべての行を返す。 */
   rows<T = Row>(table: string): Promise<T[]> {
     return this.query<T>(`SELECT * FROM ${identifier(table)}`);
   }
 
+  /** テーブルに行を追加する。 */
   async seed(data: SeedData): Promise<void> {
     for (const [table, rows] of Object.entries(data)) {
       for (const row of rows) {
@@ -88,6 +95,7 @@ export class PgEngine implements Engine {
     }
   }
 
+  /** {@inheritDoc Engine.snapshot} */
   async snapshot(): Promise<DbTable[]> {
     if (!this.database) return [];
     const columns = await this.query<{ table_name: string; column_name: string; data_type: string }>(
@@ -118,6 +126,7 @@ export class PgEngine implements Engine {
     return tables;
   }
 
+  /** {@inheritDoc Engine.reset} */
   async reset(): Promise<void> {
     if (!this.database) return;
     const tables = await this.tables();
@@ -125,6 +134,7 @@ export class PgEngine implements Engine {
     await this.execute(`TRUNCATE ${tables.map(identifier).join(', ')} RESTART IDENTITY CASCADE`);
   }
 
+  /** {@inheritDoc Engine.close} */
   async close(): Promise<void> {
     const database = this.database;
     this.database = undefined;

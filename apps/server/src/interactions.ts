@@ -13,6 +13,7 @@ const CallbackType = {
 const EPHEMERAL = 64;
 const OptionType = { subcommand: 1, group: 2, user: 6, channel: 7, role: 8, mentionable: 9 } as const;
 
+/** @internal */
 export interface InteractRequest {
   kind: 'command' | 'button' | 'select' | 'modal';
   userId: string;
@@ -26,9 +27,13 @@ export interface InteractRequest {
   timeoutMs?: number;
 }
 
+/** インタラクションに対する Bot の応答。 */
 export interface InteractResult {
+  /** 応答の種類。`message` は新しいメッセージ、`modal` はモーダル、`update` は元のメッセージの更新。 */
   kind: 'message' | 'modal' | 'update';
+  /** `kind` が `message` または `update` のときのメッセージ。 */
   message?: Json;
+  /** `kind` が `modal` のときのモーダル。 */
   modal?: Json;
 }
 

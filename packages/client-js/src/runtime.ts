@@ -3,6 +3,7 @@ import type { Engine, EngineKind } from './db/types.js';
 
 const KEY = Symbol.for('dismock.runtime');
 
+/** @internal */
 export interface Runtime {
   /** `testClient` のオプションで指定された接続先。 */
   overrides: Partial<Connection>;
@@ -15,7 +16,11 @@ export interface Runtime {
 
 type Global = typeof globalThis & { [KEY]?: Runtime };
 
-/** register フックとテストランナーで同じ実体を共有するため、グローバルに置く。 */
+/**
+ * register フックとテストランナーで同じ実体を共有するため、グローバルに置く。
+ *
+ * @internal
+ */
 export const runtime: Runtime = ((globalThis as Global)[KEY] ??= {
   overrides: {},
   engines: new Map(),

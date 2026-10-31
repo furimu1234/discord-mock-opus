@@ -2,6 +2,7 @@ import type { InteractRequest, InteractResult, Json, SeedInput } from '@dismock/
 import type { Connection } from './connection.js';
 
 /** Mock サーバーの `/api/mock` を呼び出すクライアント。 */
+/** @internal */
 export class MockApi {
   constructor(private readonly target: Connection) {}
 

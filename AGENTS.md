@@ -13,6 +13,7 @@ Discord Bot のテストを自動化するための Discord モックです。Bo
 | AGENTS.md | 作業の指針、守るべき制約、開発コマンド |
 | [CLAUDE.md](CLAUDE.md) | 機能の要件（サーバー、プロトコル、ライブラリの動作） |
 | [DESIGN.md](DESIGN.md) | 画面のデザイン要件（表示と操作） |
+| [apps/docs/](apps/docs/) | 利用者向けの公開ドキュメント（ガイドと API リファレンス） |
 
 同じ内容を複数のファイルに書かず、他のファイルの内容はリンクで参照してください。
 
@@ -29,6 +30,8 @@ pnpm test        # 起動中の Mock に testClient を接続し、テスト画�
 pnpm app         # Mock と testClient の両方を起動する。Ctrl+C で終了する
 pnpm test:run    # 起動中の Mock に対して全テストを実行して終了する
 pnpm typecheck   # 型チェック
+pnpm docs:dev    # ドキュメントサイトを開発サーバーで表示する
+pnpm docs:build  # ドキュメントサイトを apps/docs/.vitepress/dist に生成する
 ```
 
 `pnpm web` と `pnpm app` は、ブラウザで開く URL をターミナルに表示します。起動のたびにトークン以外のデータは消去されます。`pnpm test` と `pnpm test:run` には起動中の Mock が必要です。`pnpm test:run` は testClient と Bot が重ならないよう、`pnpm web` だけを起動した状態で実行してください。テストごとの初期化はないので、テストはデータが空であることを前提にしないでください。
@@ -50,6 +53,7 @@ pnpm typecheck   # 型チェック
 |---|---|---|
 | `apps/server` | `@dismock/server` | REST API と Gateway のエミュレータ、JSON への永続化 |
 | `apps/web` | `@dismock/web` | テスト画面、管理画面、DB Studio（React、Vite）。Mock が同じ URL で配信する |
+| `apps/docs` | `@dismock/docs` | 公開ドキュメント（VitePress、API Extractor）。Mock とは別のサイトで、Mock からは配信しない |
 | `packages/client-js` | `@dismock/client` | `testClient`、インメモリ DB、`import` を差し替えるフック |
 | `packages/test` | `@dismock/test` | テストランナー、テスト DSL、画面からの実行を受けるエージェント |
 | `examples/sample-bot` | | Client を公開しない Bot。全機能の動作確認を兼ねる |
@@ -71,3 +75,4 @@ pnpm typecheck   # 型チェック
 - 機能を実装する前に、[CLAUDE.md](CLAUDE.md) の該当する節を確認してください。画面を実装する場合は [DESIGN.md](DESIGN.md) も確認してください。
 - 実装で仕様が決まったら、[CLAUDE.md](CLAUDE.md) 6 章と [DESIGN.md](DESIGN.md) の未決定の事項を更新してください。
 - 値をハードコーディングしないでください。規則と例外は [CLAUDE.md](CLAUDE.md) 5 章にあります。
+- `@dismock/client` と `@dismock/test` の公開 API を追加、変更したら TSDoc を書いてください。利用者が使わない API には `@internal` を付けます。詳細は [CLAUDE.md](CLAUDE.md) 3.5 にあります。

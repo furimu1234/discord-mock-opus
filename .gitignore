@@ -157,3 +157,7 @@ data/
 
 # Generated dummy user types
 dismock-users.d.ts
+
+# Generated API docs
+apps/docs/.api/
+apps/docs/api/

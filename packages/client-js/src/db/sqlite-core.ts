@@ -21,6 +21,7 @@ export function isDuplicateError(error: unknown): boolean {
 }
 
 /** SQLite と MySQL のエンジンが共有する node:sqlite の接続。 */
+/** @internal */
 export class SqliteCore {
   readonly db = new DatabaseSync(':memory:');
 

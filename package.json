@@ -9,7 +9,11 @@
     "test": "pnpm run build && node packages/test/bin/dismock.js agent examples/*",
     "test:run": "pnpm run build && node scripts/run-tests.mjs",
     "app": "node scripts/app.mjs",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm -r run typecheck",
+    "docs:dev": "pnpm run docs:deps && pnpm --filter @dismock/docs run dev",
+    "docs:build": "pnpm run docs:deps && pnpm --filter @dismock/docs run docs:build",
+    "docs:preview": "pnpm --filter @dismock/docs run preview",
+    "docs:deps": "pnpm --filter @dismock/server --filter @dismock/client --filter @dismock/test run build"
   },
   "devDependencies": {
     "@types/node": "^24",

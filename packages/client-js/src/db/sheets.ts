@@ -1,6 +1,8 @@
 import { SNAPSHOT_ROW_LIMIT, type DbTable, type Engine } from './types.js';
 
+/** セルの値。 */
 export type CellValue = string | number | boolean | null;
+/** `{ スプレッドシートID: { シート名: 行の配列 } }` の形の初期データ。 */
 export type SheetSeed = Record<string, Record<string, CellValue[][]>>;
 
 interface Sheet {
@@ -23,9 +25,13 @@ interface GridRange {
   endColumn: number;
 }
 
+/** セルの値の読み書きのオプション。Google Sheets API v4 と同じ。 */
 export interface ValueOptions {
+  /** 値を行と列のどちらの配列で扱うか。 */
   majorDimension?: 'ROWS' | 'COLUMNS';
+  /** 読み取る値の形式。 */
   valueRenderOption?: 'FORMATTED_VALUE' | 'UNFORMATTED_VALUE' | 'FORMULA';
+  /** 書き込む値の解釈。 */
   valueInputOption?: 'RAW' | 'USER_ENTERED';
 }
 
@@ -76,10 +82,19 @@ function parseUserEntered(value: CellValue): CellValue {
 
 /** Google Sheets API v4 の主要な操作を再現するインメモリのスプレッドシート。 */
 export class SheetsEngine implements Engine {
+  /** {@inheritDoc Engine.kind} */
   readonly kind = 'sheets';
   private readonly spreadsheets = new Map<string, Spreadsheet>();
   private nextSheetId = 1;
 
+  /**
+   * スプレッドシートを作成する。
+   *
+   * @param title - スプレッドシートの名前。
+   * @param sheetTitles - シート名の一覧。
+   * @param id - スプレッドシートの ID。省略すると生成する。
+   * @returns スプレッドシートの ID。
+   */
   create(title = 'Untitled spreadsheet', sheetTitles: string[] = ['Sheet1'], id?: string): string {
     const spreadsheetId = id ?? crypto.randomUUID().replaceAll('-', '');
     this.spreadsheets.set(spreadsheetId, {
@@ -154,6 +169,7 @@ export class SheetsEngine implements Engine {
     };
   }
 
+  /** @internal */
   getValues(spreadsheetId: string, range: string, options: ValueOptions = {}) {
     const grid = this.parseRange(spreadsheetId, range);
     const render = (value: CellValue | undefined): CellValue =>
@@ -203,11 +219,13 @@ export class SheetsEngine implements Engine {
     return Array.from({ length: height }, (_, row) => values.map((column) => column[row] ?? null));
   }
 
+  /** @internal */
   updateValues(spreadsheetId: string, range: string, values: CellValue[][], options: ValueOptions = {}) {
     const grid = this.parseRange(spreadsheetId, range);
     return { spreadsheetId, ...this.write(grid, grid.startRow, values, options) };
   }
 
+  /** @internal */
   appendValues(spreadsheetId: string, range: string, values: CellValue[][], options: ValueOptions = {}) {
     const grid = this.parseRange(spreadsheetId, range);
     let startRow = grid.startRow;
@@ -221,6 +239,7 @@ export class SheetsEngine implements Engine {
     return { spreadsheetId, tableRange: range, updates: { spreadsheetId, ...updates } };
   }
 
+  /** @internal */
   clearValues(spreadsheetId: string, range: string) {
     const grid = this.parseRange(spreadsheetId, range);
     const end = Math.min(grid.endRow, grid.sheet.cells.length);
@@ -232,6 +251,7 @@ export class SheetsEngine implements Engine {
     return { spreadsheetId, clearedRange: range };
   }
 
+  /** @internal */
   metadata(spreadsheetId: string) {
     const spreadsheet = this.require(spreadsheetId);
     return {
@@ -243,6 +263,7 @@ export class SheetsEngine implements Engine {
     };
   }
 
+  /** @internal */
   batchUpdate(spreadsheetId: string, requests: Record<string, any>[]) {
     const spreadsheet = this.require(spreadsheetId);
     const replies = requests.map((request) => {
@@ -271,6 +292,7 @@ export class SheetsEngine implements Engine {
     return this.getValues(spreadsheetId, range, options).values ?? [];
   }
 
+  /** {@inheritDoc Engine.snapshot} */
   snapshot(): DbTable[] {
     return [...this.spreadsheets.values()].flatMap((spreadsheet) =>
       spreadsheet.sheets.map((sheet) => {
@@ -292,12 +314,14 @@ export class SheetsEngine implements Engine {
     );
   }
 
+  /** {@inheritDoc Engine.reset} */
   async reset(): Promise<void> {
     for (const spreadsheet of this.spreadsheets.values()) {
       for (const sheet of spreadsheet.sheets) sheet.cells = [];
     }
   }
 
+  /** {@inheritDoc Engine.close} */
   async close(): Promise<void> {
     this.spreadsheets.clear();
   }

@@ -11,31 +11,47 @@ import { runtime } from './runtime.js';
 
 /** Bot が公開している Client の最小限の形。discord.js の Client を想定している。 */
 export interface BotClient {
+  /** Gateway に接続する。 */
   login(token?: string): Promise<string>;
+  /** 接続が完了しているか。 */
   isReady(): boolean;
+  /** 接続を閉じる。 */
   destroy(): Promise<void> | void;
+  /** REST API の設定。 */
   rest: { options: { api: string } };
+  /** サーバーのキャッシュ。 */
   guilds: { cache: Map<string, unknown> };
+  /** チャンネルのキャッシュ。 */
   channels: { cache: Map<string, unknown> };
+  /** ユーザーのキャッシュ。 */
   users: { cache: Map<string, unknown> };
+  /** Bot のユーザー。 */
   user?: { id: string } | null;
 }
 
+/** インメモリ DB ごとの初期データ。 */
 export interface DbSeed {
+  /** `pg` の初期データ。 */
   pg?: SeedData;
+  /** `mysql2` の初期データ。 */
   mysql?: SeedData;
+  /** `better-sqlite3` の初期データ。 */
   sqlite?: SeedData;
+  /** Google スプレッドシートの初期データ。 */
   sheets?: SheetSeed;
 }
 
+/** テストで投入する初期データ。 */
 export interface TestSeed extends SeedInput {
+  /** インメモリ DB の初期データ。 */
   db?: DbSeed;
 }
 
+/** {@link testClient} のオプション。 */
 export interface TestClientOptions {
-  /** Mock の URL。省略すると `data/discord-mock-state.json` の値を使う。 */
+  /** Mock の URL。省略すると環境変数 `DISMOCK_URL`、`data/discord-mock-state.json` の順に探す。 */
   mockUrl?: string;
-  /** Mock のトークン。省略すると `data/discord-mock-state.json` の値を使う。 */
+  /** Mock のトークン。省略すると環境変数 `DISMOCK_TOKEN`、`data/discord-mock-state.json` の順に探す。 */
   token?: string;
   /** Client を公開していない Bot のエントリーファイル。読み込むと Bot が起動する。 */
   entry?: string;
@@ -47,6 +63,7 @@ export interface TestClientOptions {
   seed?: TestSeed;
 }
 
+/** @internal */
 export interface PrepareOptions {
   /**
    * テストを実行するユーザー。`'login'` はログイン中のユーザーで、ID かユーザー名、そのリストも指定できる。
@@ -60,6 +77,7 @@ export interface PrepareOptions {
   channelId?: string;
 }
 
+/** @internal */
 export interface Prepared {
   user: Json;
   actor: Actor;
@@ -78,6 +96,27 @@ function isOptions(value: unknown): value is TestClientOptions {
   return typeof (value as BotClient | undefined)?.login !== 'function';
 }
 
+/**
+ * 本物の Client をラップし、Mock の操作と Client のメソッドを同じインスタンスから呼び出せるようにする。
+ *
+ * @remarks
+ * 名前が重なる `users` などは Mock の操作を優先する。本物の Client のものは {@link TestClient.client} から使う。
+ * Bot 固有の操作は、このクラスを継承してメソッドを追加する。
+ *
+ * @example
+ * ```ts
+ * import * as disMock from '@dismock/client';
+ * import { client } from '../src/bot.ts';
+ *
+ * class MyTestBotClient extends disMock.TestClient {
+ *   greetings() {
+ *     return disMock.db.pg().rows('greetings');
+ *   }
+ * }
+ *
+ * export const testClient = new MyTestBotClient(client);
+ * ```
+ */
 export class TestClient {
   private bot?: BotClient;
   private api?: MockApi;
@@ -88,6 +127,7 @@ export class TestClient {
   private defaultGuildId?: string;
   private loggedInUserId?: string | null;
 
+  /** インメモリ DB。 */
   readonly db = db;
 
   /** ダミーユーザーを追加する。 */
@@ -95,18 +135,25 @@ export class TestClient {
     create: async (input: SeedUser): Promise<Json> => (await this.seed({ users: [input] })).users[0],
   };
 
+  /** チャンネルを追加する。 */
   readonly channels = {
     create: async (input: SeedChannel): Promise<Json> => (await this.seed({ channels: [input] })).channels[0],
   };
 
+  /** ロールを追加する。 */
   readonly roles = {
     create: async (input: SeedRole): Promise<Json> => (await this.seed({ roles: [input] })).roles[0],
   };
 
+  /** サーバーを追加する。 */
   readonly guilds = {
     create: async (input: SeedGuild): Promise<Json> => (await this.seed({ guilds: [input] })).guilds[0],
   };
 
+  /**
+   * @param client - 本物の Client またはオプション。
+   * @param options - `client` に本物の Client を渡したときのオプション。
+   */
   constructor(client?: BotClient | TestClientOptions, options?: TestClientOptions) {
     this.bot = isOptions(client) ? undefined : client;
     this.options = isOptions(client) ? (client ?? {}) : (options ?? {});
@@ -172,7 +219,12 @@ export class TestClient {
     }
   }
 
-  /** ダミーデータと DB を初期データとして投入する。 */
+  /**
+   * ダミーデータと DB を初期データとして投入する。
+   *
+   * @param input - 投入するデータ。ロールやチャンネルは名前で参照できる。
+   * @returns 追加されたサーバー、ロール、チャンネル、ユーザー。
+   */
   async seed(input: TestSeed): Promise<Json> {
     const { db: dbSeed, ...rest } = input;
     const discord = { ...rest, users: rest.users?.map((user) => ({ temporary: true, ...user })) };
@@ -187,6 +239,8 @@ export class TestClient {
    * テストの準備をする。状態は初期化せず、今のデータの上でテストを実行する。
    * 操作するユーザーは `users` の指定がなければログイン中のユーザーで、`seed` で追加したユーザーは操作に使わない。
    * チャンネルは `seed` の指定がなければ、画面で開いているチャンネルを使う。
+   *
+   * @internal
    */
   async prepare(options: PrepareOptions = {}): Promise<Prepared> {
     const api = await this.mock();
@@ -269,50 +323,85 @@ export class TestClient {
     };
   }
 
-  /** テストの前後で、画面でログインしているユーザーを維持する。 */
+  /**
+   * テストの前後で、画面でログインしているユーザーを維持する。
+   *
+   * @internal
+   */
   async beginTestSession(): Promise<void> {
     this.loggedInUserId = (await (await this.mock()).state()).activeUserId;
   }
 
+  /** @internal */
   async endTestSession(): Promise<void> {
     if (this.loggedInUserId) await (await this.mock()).switchUser(this.loggedInUserId);
   }
 
-  /** テストを実行せず Bot を起動したままにする。画面からの手動操作に使う。 */
+  /**
+   * テストを実行せず Bot を起動したままにする。画面からの手動操作に使う。
+   *
+   * @internal
+   */
   async serve(): Promise<void> {
     await this.mock();
     await this.start();
   }
 
-  /** 指定したユーザーとして操作する `Actor` を返す。 */
+  /**
+   * 指定したユーザーとして操作する {@link Actor} を返す。
+   *
+   * @param user - ユーザーまたはユーザーの ID。
+   */
   as(user: Json | string): Actor {
     const target = typeof user === 'string' ? { id: user } : user;
     if (!this.api) throw new Error('dismock: テストの実行中に呼び出してください');
     return new Actor(this.api, target, () => this.defaultChannelId);
   }
 
-  /** メッセージの履歴を返す。DM は `actor.dms()` で取得する。 */
+  /**
+   * メッセージの履歴を返す。DM は {@link Actor.dms} で取得する。
+   *
+   * @param channelId - チャンネルの ID。省略するとすべてのチャンネル。
+   */
   async messages(channelId?: string): Promise<Json[]> {
     return (await this.mock()).messages(channelId);
   }
 
-  /** Bot が送信したメッセージだけを返す。 */
+  /**
+   * Bot が送信したメッセージだけを返す。
+   *
+   * @param channelId - チャンネルの ID。省略するとすべてのチャンネル。
+   */
   async botMessages(channelId?: string): Promise<Json[]> {
     const state = await (await this.mock()).state();
     const messages = await this.messages(channelId);
     return messages.filter((message) => message.author.id === state.botUserId);
   }
 
+  /** Mock の状態を返す。DM の内容は含まない。 */
   async state(): Promise<Json> {
     return (await this.mock()).state();
   }
 
+  /** 本物の Client の接続を閉じる。 */
   async destroy(): Promise<void> {
     await this.bot?.destroy();
   }
 }
 
-/** 本物の Client をラップし、Mock と Client の両方のメソッドを持つ `TestClient` を返す。 */
+/**
+ * 本物の Client をラップし、Mock と Client の両方のメソッドを持つ {@link TestClient} を返す。
+ *
+ * @param client - 本物の Client またはオプション。Client を公開していない Bot は `entry` を指定する。
+ * @param options - `client` に本物の Client を渡したときのオプション。
+ *
+ * @example
+ * ```ts
+ * import * as disMock from '@dismock/client';
+ *
+ * export const testClient = disMock.testClient({ entry: 'src/index.ts' });
+ * ```
+ */
 export function testClient(client: BotClient | TestClientOptions, options?: TestClientOptions): TestClient & BotClient {
   return new TestClient(client, options) as TestClient & BotClient;
 }

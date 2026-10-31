@@ -6,13 +6,17 @@ import { runtime } from './runtime.js';
 const DATA_FILE = join('data', 'discord-mock-state.json');
 const DEFAULT_URL = `http://${DEFAULT_HOST}:${DEFAULT_PORT}`;
 
+/** Mock への接続情報。 */
 export interface Connection {
+  /** Mock の URL。 */
   url: string;
+  /** Mock のトークン。 */
   token: string;
 }
 
 /** テストを始められない状態を表す。テストの失敗とは区別する。 */
 export class StartupError extends Error {
+  /** エラーの名前。 */
   override name = 'StartupError';
 }
 

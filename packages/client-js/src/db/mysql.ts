@@ -7,6 +7,7 @@ const ER_DUP_ENTRY = 1062;
 const ER_NO_SUCH_TABLE = 1146;
 const ER_PARSE_ERROR = 1064;
 
+/** @internal */
 export interface MysqlHeader {
   fieldCount: number;
   affectedRows: number;
@@ -17,11 +18,13 @@ export interface MysqlHeader {
   changedRows: number;
 }
 
+/** @internal */
 export interface MysqlField {
   name: string;
   type: string;
 }
 
+/** @internal */
 export interface MysqlQueryOptions {
   rowsAsArray?: boolean;
   typeCast?: boolean | ((field: unknown, next: () => unknown) => unknown);
@@ -71,9 +74,12 @@ function mysqlError(error: unknown, sql: string): Error {
  * MySQL 固有の構文のうち、変換に対応していないものはエラーになる。
  */
 export class MysqlEngine implements Engine {
+  /** {@inheritDoc Engine.kind} */
   readonly kind = 'mysql';
+  /** @internal */
   readonly core = new SqliteCore();
 
+  /** @internal */
   constructor() {
     const { db } = this.core;
     const variadic = { varargs: true, deterministic: false };
@@ -88,7 +94,11 @@ export class MysqlEngine implements Engine {
     db.function('char_length', { deterministic: true }, (value) => String(value).length);
   }
 
-  /** mysql2 と同じ `[rows, fields]` または `[header, undefined]` を返す。 */
+  /**
+   * mysql2 と同じ `[rows, fields]` または `[header, undefined]` を返す。
+   *
+   * @internal
+   */
   execute(
     sql: string,
     values: unknown[] = [],
@@ -180,26 +190,32 @@ export class MysqlEngine implements Engine {
     return (Array.isArray(rows) ? rows : []) as T[];
   }
 
+  /** テーブル名の一覧を返す。 */
   tables(): string[] {
     return this.core.tables();
   }
 
+  /** テーブルのすべての行を返す。 */
   rows<T = Row>(table: string): T[] {
     return this.query<T>(`SELECT * FROM \`${table}\``);
   }
 
+  /** テーブルに行を追加する。 */
   seed(data: SeedData): void {
     this.core.seed(data);
   }
 
+  /** {@inheritDoc Engine.snapshot} */
   snapshot(): DbTable[] {
     return this.core.snapshot();
   }
 
+  /** {@inheritDoc Engine.reset} */
   async reset(): Promise<void> {
     this.core.reset();
   }
 
+  /** {@inheritDoc Engine.close} */
   async close(): Promise<void> {
     this.core.close();
   }

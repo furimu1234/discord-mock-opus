@@ -4,12 +4,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DEFAULT_USERS } from './constants.js';
 
+/** Discord API の JSON オブジェクト。 */
 export type Json = Record<string, any>;
 
 const DISCORD_EPOCH = 1420070400000n;
 const ADMINISTRATOR = '8';
 const EVERYONE_PERMISSIONS = '2248473465835073';
 
+/** チャンネルの種類と、Discord API の値の対応。 */
 export const ChannelType = { text: 0, dm: 1, voice: 2, category: 4 } as const;
 
 export interface GuildRecord {
@@ -37,51 +39,83 @@ export interface MockState {
   activeUserId: string | null;
 }
 
+/** 追加するロール。 */
 export interface SeedRole {
+  /** ロールの ID。省略すると生成する。同じ ID のロールは追加せず使い回す。 */
   id?: string;
+  /** ロールの名前。 */
   name: string;
+  /** 追加先のサーバーの ID または名前。 */
   guild?: string;
+  /** 権限のビットフィールド。 */
   permissions?: string | bigint;
+  /** 表示色。 */
   color?: number;
+  /** メンバーリストで分けて表示するか。 */
   hoist?: boolean;
+  /** メンションできるか。 */
   mentionable?: boolean;
 }
 
+/** 追加するチャンネル。 */
 export interface SeedChannel {
+  /** チャンネルの ID。省略すると生成する。同じ ID のチャンネルは追加せず使い回す。 */
   id?: string;
+  /** チャンネルの名前。 */
   name: string;
+  /** 追加先のサーバーの ID または名前。 */
   guild?: string;
+  /** チャンネルの種類。既定は `text`。 */
   type?: keyof typeof ChannelType | number;
+  /** 親のカテゴリーの ID または名前。 */
   parent?: string;
+  /** トピック。 */
   topic?: string;
 }
 
+/** 追加するダミーユーザー。 */
 export interface SeedUser {
+  /** ユーザーの ID。省略すると生成する。 */
   id?: string;
+  /** ユーザー名。 */
   username: string;
+  /** 表示名。 */
   globalName?: string;
+  /** アバターのハッシュ。 */
   avatar?: string | null;
+  /** Bot のユーザーとして扱うか。 */
   bot?: boolean;
+  /** 参加するサーバーの ID または名前。 */
   guild?: string;
   /** 複数のサーバーに参加させるときに指定する。 */
   guilds?: string[];
+  /** 付与するロールの ID または名前。 */
   roles?: string[];
+  /** サーバーでのニックネーム。 */
   nick?: string;
   /** テストが追加したユーザー。型定義の補完の対象にしない。 */
   temporary?: boolean;
 }
 
+/** 追加するサーバー。 */
 export interface SeedGuild {
+  /** サーバーの ID。省略すると生成する。同じ ID のサーバーは追加せず使い回す。 */
   id?: string;
+  /** サーバーの名前。 */
   name: string;
 }
 
+/** 一括で追加するダミーデータ。 */
 export interface SeedInput {
   /** サーバーを指定しないデータの追加先。省略すると最初のサーバーに追加する。 */
   defaultGuild?: string;
+  /** 追加するサーバー。 */
   guilds?: SeedGuild[];
+  /** 追加するロール。 */
   roles?: SeedRole[];
+  /** 追加するチャンネル。 */
   channels?: SeedChannel[];
+  /** 追加するダミーユーザー。 */
   users?: SeedUser[];
 }
 

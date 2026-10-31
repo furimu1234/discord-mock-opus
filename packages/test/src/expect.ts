@@ -3,12 +3,27 @@ import { expect as jestExpect } from 'expect';
 const DEFAULT_TIMEOUT_MS = 2000;
 const DEFAULT_INTERVAL_MS = 20;
 
+/** `expect.poll` のオプション。 */
 export interface PollOptions {
+  /** 待つ時間。既定は 2000ms。 */
   timeout?: number;
+  /** 評価する間隔。既定は 20ms。 */
   interval?: number;
 }
 
-type Matchers = ReturnType<typeof jestExpect>;
+/** `expect.poll` が返すマッチャー。 */
+export type Matchers = ReturnType<typeof jestExpect>;
+
+/** {@link expect} に追加した機能。 */
+export interface PollApi {
+  /**
+   * 値がマッチャーを満たすまで繰り返し評価する。
+   *
+   * @param actual - 値を返す関数。
+   * @param options - 待つ時間と間隔。
+   */
+  poll(actual: () => unknown, options?: PollOptions): Matchers;
+}
 
 /** `actual` の値がマッチャーを満たすまで繰り返し評価する。 */
 function pollMatchers(actual: () => unknown, options: PollOptions, negate: boolean): Matchers {
@@ -34,6 +49,14 @@ function pollMatchers(actual: () => unknown, options: PollOptions, negate: boole
   });
 }
 
-export const expect = Object.assign(jestExpect, {
+/**
+ * Jest の `expect` に、非同期の処理を待つ `expect.poll` を追加したもの。
+ *
+ * @example
+ * ```ts
+ * await expect.poll(() => db.pg().rows('visits')).toHaveLength(1);
+ * ```
+ */
+export const expect: typeof jestExpect & PollApi = Object.assign(jestExpect, {
   poll: (actual: () => unknown, options: PollOptions = {}) => pollMatchers(actual, options, false),
 });
