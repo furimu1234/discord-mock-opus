@@ -16,6 +16,8 @@ interface RunConfig {
   ids?: string[];
   /** 結果を画面へ報告するときのプロジェクト名。 */
   project?: string;
+  /** テストを実行するチャンネル。 */
+  channelId?: string;
 }
 
 const config = JSON.parse(process.env.DISMOCK_TEST_CONFIG ?? '{"files":[]}') as RunConfig;
@@ -128,7 +130,7 @@ async function runTest(test: TestCase, suite: Suite, title: string, id: string, 
     for (const s of order) for (const hook of select(s)) await hook(local);
   };
   try {
-    const prepared = await context.bot?.prepare({ ...test.options, label: title });
+    const prepared = await context.bot?.prepare({ ...test.options, label: title, channelId: config.channelId });
     const local = { ...context, ...prepared } as TestContext;
     await withTimeout(async () => {
       try {
@@ -200,6 +202,7 @@ function collect(file: string, suite: Suite, path: string[] = []): object[] {
     file,
     suite: name,
     name: test.name,
+    description: test.options.description,
     skipped: !test.fn || test.mode === 'skip' || ancestors(suite).some((s) => s.mode === 'skip'),
   }));
   return [...tests, ...suite.suites.flatMap((child) => collect(file, child, name))];
@@ -247,9 +250,10 @@ async function serveBot(testClient: TestClient | undefined): Promise<number> {
   if (!testClient) throw new StartupError('testClient.ts が見つかりません');
   await testClient.serve();
   publishLiveDb();
-  process.on('message', (message: { ids: string[]; files: string[] }) => {
+  process.on('message', (message: { ids: string[]; files: string[]; channelId?: string }) => {
     config.ids = message.ids;
     config.files = message.files;
+    config.channelId = message.channelId;
     void runTests()
       .catch((error: unknown) => console.error(error))
       .finally(() => process.send?.({ done: true }));

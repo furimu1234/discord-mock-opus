@@ -18,6 +18,8 @@ export interface TestContext {
 export interface TestOptions extends PrepareOptions {
   /** テストの制限時間。既定は 5000ms。 */
   timeout?: number;
+  /** テストケースのカードに表示する説明。 */
+  description?: string;
   seed?: TestSeed;
 }
 

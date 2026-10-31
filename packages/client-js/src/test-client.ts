@@ -52,6 +52,8 @@ export interface PrepareOptions {
   seed?: TestSeed;
   /** チャンネルに表示するテストの区切りの名前。 */
   label?: string;
+  /** テストを実行するチャンネル。画面で開いているチャンネルが渡される。 */
+  channelId?: string;
 }
 
 export interface Prepared {
@@ -76,6 +78,7 @@ export class TestClient {
   private dbReady = false;
   private verified?: Promise<void>;
   private defaultChannelId?: string;
+  private defaultGuildId?: string;
   private loggedInUserId?: string | null;
 
   readonly db = db;
@@ -169,7 +172,7 @@ export class TestClient {
     if (dbSeed?.mysql) db.mysql().seed(dbSeed.mysql);
     if (dbSeed?.sqlite) db.sqlite().seed(dbSeed.sqlite);
     if (dbSeed?.sheets) db.sheets().seed(dbSeed.sheets);
-    return (await this.mock()).seed(discord);
+    return (await this.mock()).seed({ defaultGuild: this.defaultGuildId, ...discord });
   }
 
   /**
@@ -179,11 +182,13 @@ export class TestClient {
   async prepare(options: PrepareOptions = {}): Promise<Prepared> {
     const api = await this.mock();
     await this.start(options);
+    const target = options.channelId ? (await api.state()).channels[options.channelId] : undefined;
+    this.defaultGuildId = target?.guild_id;
     const seeded = await this.seed(this.merge(this.options.seed, options.seed));
     if (options.users !== 'login') return { seeded };
 
     const user = await this.pickUser(api, seeded);
-    const channel = await this.pickChannel(api, seeded);
+    const channel = await this.pickChannel(api, seeded, target);
     const guildId = channel.guild_id as string;
     const state = await api.state();
     if (!state.guilds[guildId].members[user.id]) await api.join(guildId, user.id);
@@ -202,9 +207,10 @@ export class TestClient {
     );
   }
 
-  private async pickChannel(api: MockApi, seeded: Json): Promise<Json> {
+  private async pickChannel(api: MockApi, seeded: Json, target?: Json): Promise<Json> {
     const seededChannel = seeded.channels.find((channel: Json) => channel.type === TEXT_CHANNEL) as Json | undefined;
     if (seededChannel) return seededChannel;
+    if (target) return target;
     const state = await api.state();
     const guild = (seeded.guilds[0] ?? Object.values<Json>(state.guilds)[0]) as Json | undefined;
     const channels = Object.values<Json>(state.channels)

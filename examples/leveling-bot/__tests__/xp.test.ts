@@ -1,6 +1,7 @@
 import { describe, expect, test } from '@dismock/test';
 import { levelForXp, xpForLevel, XP_PER_MESSAGE } from '../src/levels.ts';
-import { memberXp, setMemberXp, settle } from './helpers.ts';
+import { memberXp, OTHER_CHANNEL, OTHER_GUILD, setMemberXp, settle } from './helpers.ts';
+import { setLevelRole } from '../src/db.ts';
 
 // ユーザーごとに XP とクールダウンがあるため、テストごとに新しいユーザーを使う。
 const newMember = { users: [{ username: 'member' }] };
@@ -34,9 +35,9 @@ describe('発言による XP の獲得', () => {
 
   test(
     'Bot の発言では XP を獲得しない',
-    { users: 'login', seed: { users: [{ username: 'human' }, { username: 'other-bot', bot: true, guild: 'テストサーバー' }] } },
-    async ({ bot, seeded, guild, db }) => {
-      const otherBot = seeded.users[1];
+    { users: 'login' },
+    async ({ bot, guild, db }) => {
+      const [otherBot] = (await bot.seed({ users: [{ username: 'other-bot', bot: true, guild: guild.id }] })).users;
       await bot.as(otherBot).sendMessage('beep');
       await settle();
       await expect(memberXp(db, guild.id, otherBot.id)).resolves.toBeUndefined();
@@ -51,24 +52,17 @@ describe('発言による XP の獲得', () => {
     await expect.poll(() => memberXp(db, guild.id, b.id)).toBe(XP_PER_MESSAGE);
   });
 
-  test(
-    'サーバーごとに別々に集計する',
-    {
-      users: 'login',
-      seed: {
-        guilds: [{ name: 'A' }, { name: 'B' }],
-        channels: [{ name: 'a', guild: 'A' }, { name: 'b', guild: 'B' }],
-        users: [{ username: 'traveler', guilds: ['A', 'B'] }],
-      },
-    },
-    async ({ actor, seeded, user, db }) => {
-      await actor.sendMessage('A で発言', { channelId: seeded.channels[0].id });
-      await actor.sendMessage('B で発言', { channelId: seeded.channels[1].id });
-      for (const target of seeded.guilds) {
-        await expect.poll(() => memberXp(db, target.id, user.id)).toBe(XP_PER_MESSAGE);
-      }
-    },
-  );
+  test('サーバーごとに別々に集計する', { users: 'login', seed: newMember }, async ({ bot, actor, user, guild, db }) => {
+    await bot.seed({
+      guilds: [{ id: OTHER_GUILD, name: 'サブサーバー' }],
+      channels: [{ id: OTHER_CHANNEL, name: 'サブ', guild: OTHER_GUILD }],
+    });
+    await actor.sendMessage('開いているチャンネルで発言');
+    await actor.sendMessage('別のサーバーで発言', { channelId: OTHER_CHANNEL });
+    for (const guildId of [guild.id, OTHER_GUILD]) {
+      await expect.poll(() => memberXp(db, guildId, user.id)).toBe(XP_PER_MESSAGE);
+    }
+  });
 });
 
 describe('レベルアップ', () => {
@@ -110,10 +104,10 @@ describe('レベルアップ', () => {
 
   test(
     '発言によるレベルアップでも報酬ロールを付与する',
-    { users: 'login', seed: { guilds: [{ name: '報酬' }], roles: [{ name: 'bronze' }], users: [{ username: 'member' }] } },
+    { users: 'login', seed: { roles: [{ name: 'bronze' }], users: [{ username: 'member' }] } },
     async ({ bot, actor, user, guild, seeded, db }) => {
       const role = seeded.roles[0];
-      await db.pg().seed({ level_roles: [{ guild_id: guild.id, level: TARGET_LEVEL, role_id: role.id }] });
+      await setLevelRole(guild.id, TARGET_LEVEL, role.id);
       await setMemberXp(db, guild.id, user.id, threshold - XP_PER_MESSAGE);
       await actor.sendMessage('レベルアップ');
       await expect

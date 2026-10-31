@@ -7,6 +7,7 @@ export interface TestCaseInfo {
   file: string;
   suite: string[];
   name: string;
+  description?: string;
   skipped: boolean;
 }
 
@@ -66,15 +67,18 @@ export class TestRegistry {
     this.notify();
   }
 
-  requestRun(project: string, ids: string[]): void {
+  /** `channelId` は画面で開いているチャンネルで、テストの実行先になる。 */
+  requestRun(project: string, ids: string[], channelId?: string): void {
     if (!this.agentConnected) throw Object.assign(new Error('testClient が起動していません'), { status: 409 });
     if (this.runningProject) throw Object.assign(new Error('テストの実行中です'), { status: 409 });
     if (ids.length === 0) throw new Error('テストケースを選択してください');
     this.runningProject = project;
-    this.results[project] = Object.fromEntries(ids.map((id) => [id, { status: 'queued' }]));
-    this.testDb[project] = {};
+    this.results[project] = {
+      ...this.results[project],
+      ...Object.fromEntries(ids.map((id) => [id, { status: 'queued' as const }])),
+    };
     this.notify();
-    this.store.emit('ui', 'TEST_RUN', { project, ids });
+    this.store.emit('ui', 'TEST_RUN', { project, ids, channelId });
   }
 
   report(project: string, id: string, result: TestResult, db?: Json[]): void {

@@ -9,7 +9,7 @@ import {
 import { Message } from './components/Message';
 import { ModalDialog } from './components/ModalDialog';
 import { StudioPage, type StudioSource } from './components/StudioPage';
-import { TestsPage, TestsPanel, useTestSelection, type TestSelection } from './components/TestsPage';
+import { TestsPage, TestsPanel, type TestListProps } from './components/TestsPage';
 
 type View = { kind: 'guild'; guildId: string } | { kind: 'dm' } | { kind: 'tests' } | { kind: 'studio' } | { kind: 'admin' };
 type PanelTab = 'members' | 'tests';
@@ -145,34 +145,33 @@ function UserPanel({ state, activeUser, voice, onLeaveVoice, onError }: {
   );
 }
 
-function SidePanel({ tab, onTab, guild, state, tests, selection, onError, onOpenDb }: {
+function SidePanel({ tab, onTab, guild, state, testList }: {
   tab: PanelTab;
   onTab: (tab: PanelTab) => void;
   guild?: Json;
   state: Json;
-  tests: Json | null;
-  selection: TestSelection;
-  onError: (message: string) => void;
-  onOpenDb: (project: string, id: string) => void;
+  testList: TestListProps;
 }) {
   // DM にメンバーの一覧はないため、テストケースだけを表示する。
   const active = guild ? tab : 'tests';
-  const tabButton = (id: PanelTab, label: string) => (
+  const projects = (testList.tests?.projects ?? []) as Json[];
+  const project = projects.find((p) => p.name === testList.projectName) ?? projects[0];
+  const tabButton = (id: PanelTab, label: string, count: number) => (
     <button role="tab" className={active === id ? 'panel-tab active' : 'panel-tab'} aria-selected={active === id}
       disabled={id === 'members' && !guild} onClick={() => onTab(id)}>
-      {label}
+      {label}<span className="tab-count">{count}</span>
     </button>
   );
   return (
     <aside className={active === 'tests' ? 'side-panel wide' : 'side-panel'}>
       <div className="panel-tabs" role="tablist" aria-label="右パネル">
-        {tabButton('members', 'メンバー')}
-        {tabButton('tests', 'テストケース')}
+        {tabButton('members', 'メンバー', Object.keys(guild?.members ?? {}).length)}
+        {tabButton('tests', 'テストケース', project?.tests.length ?? 0)}
       </div>
       <div className="panel-body" role="tabpanel">
         {active === 'members' && guild
           ? <MemberList guild={guild} state={state} />
-          : <TestsPanel tests={tests} selection={selection} onError={onError} onOpenDb={onOpenDb} />}
+          : <TestsPanel {...testList} />}
       </div>
     </aside>
   );
@@ -287,7 +286,8 @@ export function App() {
   const [channels, setChannels] = useState<Record<string, string>>({});
   const [showPanel, setShowPanel] = useState(true);
   const [panelTab, setPanelTab] = useState<PanelTab>('members');
-  const selection = useTestSelection();
+  const [projectName, setProjectName] = useState<string | null>(null);
+  const lastChannelId = useRef<string | null>(null);
   const [studioSource, setStudioSource] = useState<StudioSource>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -318,6 +318,7 @@ export function App() {
     ? (textChannels.find((c) => c.id === channels[guild.id])?.id ?? textChannels[0]?.id ?? null)
     : null;
   const channel = channelId ? (state.channels[channelId] as Json) : undefined;
+  if (channelId) lastChannelId.current = channelId;
 
   const voice = activeUser
     ? Object.values<Json>(state.voiceStates).find((v) => v.user_id === activeUser.id)
@@ -340,10 +341,15 @@ export function App() {
     setStudioSource({ project, id });
     setView({ kind: 'studio' });
   };
-  const panel = (
-    <SidePanel tab={panelTab} onTab={setPanelTab} guild={guild} state={state} tests={tests} selection={selection}
-      onError={onError} onOpenDb={openDb} />
-  );
+  const testList: TestListProps = {
+    tests,
+    projectName,
+    onProject: setProjectName,
+    channelId: lastChannelId.current,
+    onError,
+    onOpenDb: openDb,
+  };
+  const panel = <SidePanel tab={panelTab} onTab={setPanelTab} guild={guild} state={state} testList={testList} />;
   const togglePanel = () => setShowPanel(!showPanel);
 
   return (
@@ -380,7 +386,7 @@ export function App() {
           channelId={dms[0]?.channel_id ?? null} activeUser={activeUser} placeholder="Bot へメッセージを送信"
           resolveChannel={openDm} onError={onError} panel={panel} showPanel={showPanel} onTogglePanel={togglePanel} />
       )}
-      {current.kind === 'tests' && <TestsPage tests={tests} selection={selection} onError={onError} onOpenDb={openDb} />}
+      {current.kind === 'tests' && <TestsPage {...testList} />}
       {current.kind === 'studio' && <StudioPage tests={tests} source={studioSource} onSource={setStudioSource} onError={onError} />}
       {current.kind === 'admin' && <AdminPage state={state} tests={tests} onError={onError} />}
       {toast && <div className="toast" role="alert">{toast}</div>}

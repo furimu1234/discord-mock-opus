@@ -225,7 +225,7 @@ export class Rest {
       return { ok: true };
     });
     mock('POST', '/tests/run', ({ body }) => {
-      tests.requestRun(body.project, body.ids);
+      tests.requestRun(body.project, body.ids, body.channelId);
       return { ok: true };
     });
     mock('POST', '/tests/report', ({ body }) => {

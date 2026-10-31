@@ -80,10 +80,17 @@ describe('ボタン', () => {
 });
 
 describe('初期データ', () => {
+  // 繰り返し実行してもサーバーが増えないよう、ID を固定して使い回す。
   const seed = {
-    guilds: [{ name: 'Seed Guild' }],
-    roles: [{ name: 'admin', permissions: '8' }, { name: 'member' }],
-    channels: [{ name: 'rules' }, { name: 'lobby', type: 'voice' as const }],
+    guilds: [{ id: '1000000000000000011', name: 'Seed Guild' }],
+    roles: [
+      { id: '1000000000000000012', name: 'admin', permissions: '8' },
+      { id: '1000000000000000013', name: 'member' },
+    ],
+    channels: [
+      { id: '1000000000000000014', name: 'rules' },
+      { id: '1000000000000000015', name: 'lobby', type: 'voice' as const },
+    ],
     users: [{ username: 'owner', roles: ['admin'] }, { username: 'guest', roles: ['member'] }],
   };
 

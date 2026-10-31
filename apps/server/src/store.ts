@@ -74,6 +74,8 @@ export interface SeedGuild {
 }
 
 export interface SeedInput {
+  /** サーバーを指定しないデータの追加先。省略すると最初のサーバーに追加する。 */
+  defaultGuild?: string;
   guilds?: SeedGuild[];
   roles?: SeedRole[];
   channels?: SeedChannel[];
@@ -319,6 +321,9 @@ export class Store extends EventEmitter {
   }
 
   createGuild(input: SeedGuild): GuildRecord {
+    // 同じ ID を指定したときは使い回す。テストを繰り返しても増えない。
+    const existing = input.id ? this.state.guilds[input.id] : undefined;
+    if (existing) return existing;
     const id = input.id ?? snowflake();
     const botRoleId = snowflake();
     const guild: GuildRecord = {
@@ -358,6 +363,8 @@ export class Store extends EventEmitter {
 
   createRole(guildId: string, input: SeedRole): Json {
     const guild = this.requireGuild(guildId);
+    const existing = guild.roles.find((role) => role.id === input.id);
+    if (existing) return existing;
     const role = this.roleRecord(input.id ?? snowflake(), input, guild.roles.length);
     guild.roles.push(role);
     this.changed();
@@ -366,6 +373,8 @@ export class Store extends EventEmitter {
   }
 
   createChannel(guildId: string, input: SeedChannel): Json {
+    const existing = input.id ? this.state.channels[input.id] : undefined;
+    if (existing) return existing;
     const type = typeof input.type === 'number' ? input.type : ChannelType[input.type ?? 'text'];
     const parent = input.parent ? this.findChannel(guildId, input.parent) : undefined;
     const channel: Json = {
@@ -415,7 +424,7 @@ export class Store extends EventEmitter {
     }
     // 同じ名前のサーバーがあるときは、今回追加したサーバーを優先する。
     const resolveGuild = (ref?: string): string => {
-      if (!ref) return guilds[0]?.id ?? Object.keys(this.state.guilds)[0]!;
+      if (!ref) return guilds[0]?.id ?? input.defaultGuild ?? Object.keys(this.state.guilds)[0]!;
       const found = [...guilds, ...Object.values(this.state.guilds)].find((g) => g.id === ref || g.name === ref);
       if (!found) throw new NotFound(`Unknown guild: ${ref}`);
       return found.id;

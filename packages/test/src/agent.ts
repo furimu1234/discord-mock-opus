@@ -13,7 +13,7 @@ interface Project {
 
 interface AgentEvent {
   type: string;
-  data: { project?: string; ids?: string[] };
+  data: { project?: string; ids?: string[]; channelId?: string };
 }
 
 let bot: { project: string; child: ChildProcess } | undefined;
@@ -95,14 +95,14 @@ async function switchBot(project: Project): Promise<void> {
 }
 
 /** Bot のプロセスの中でテストを実行する。DB を引き継ぐため、そのプロジェクトの Bot に接続する。 */
-async function runTests(project: Project, ids: string[]): Promise<void> {
+async function runTests(project: Project, ids: string[], channelId?: string): Promise<void> {
   if (bot?.project !== project.name) await switchBot(project);
   const child = bot?.child;
   if (child) {
     await new Promise<void>((done) => {
       child.once('message', () => done());
       child.once('exit', () => done());
-      child.send({ ids, files: findTests(project.dir) });
+      child.send({ ids, files: findTests(project.dir), channelId });
     });
   }
   if (!bot) await switchBot(project);
@@ -156,7 +156,7 @@ export async function runAgent(dirs: string[]): Promise<void> {
   };
   const onEvent = (event: AgentEvent) => {
     const project = find(event.data.project);
-    if (event.type === 'TEST_RUN' && project) enqueue(() => runTests(project, event.data.ids ?? []));
+    if (event.type === 'TEST_RUN' && project) enqueue(() => runTests(project, event.data.ids ?? [], event.data.channelId));
     if (event.type === 'BOT_SELECT' && project) enqueue(() => switchBot(project).then(() => registerAll(projects)));
     if (event.type === 'TEST_RELOAD') enqueue(() => registerAll(projects));
   };

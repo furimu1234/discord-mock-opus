@@ -23,3 +23,29 @@ export async function memberXp(db: Database, guildId: string, userId: string): P
 
 /** 発言の処理が終わるのを待つ。何も起きないことを確認するときに使う。 */
 export const settle = () => new Promise((done) => setTimeout(done, 150));
+
+/** テスト用の別サーバーのデータを空にする。DB だけを使うときは、Mock にサーバーがなくてもよい。 */
+export const OTHER_GUILD = '1000000000000000001';
+export const OTHER_CHANNEL = '1000000000000000002';
+
+export function clearGuildXp(db: Database, guildId: string) {
+  return db.pg().query('DELETE FROM members WHERE guild_id = $1', [guildId]);
+}
+
+/** メンバーの順位を DB の内容から求める。Bot の計算と独立に確認するため。 */
+export async function expectedRank(db: Database, guildId: string, xp: number): Promise<number> {
+  const rows = await db
+    .pg()
+    .query<{ total: string }>('SELECT count(*) AS total FROM members WHERE guild_id = $1 AND xp > $2', [guildId, xp]);
+  return Number(rows[0]!.total) + 1;
+}
+
+/** サーバーの XP の上位を DB の内容から求める。 */
+export function topMembers(db: Database, guildId: string, limit: number) {
+  return db
+    .pg()
+    .query<{ user_id: string; xp: number }>(
+      'SELECT user_id, xp FROM members WHERE guild_id = $1 ORDER BY xp DESC, user_id LIMIT $2',
+      [guildId, limit],
+    );
+}
