@@ -1,0 +1,162 @@
+# Discord Mock (discord-mock-opus) 要件定義書
+
+本ドキュメントは、**Discord Mock（サーバー / UI）** と **クライアントライブラリ（SDK / テストフレームワーク）** の責務を明確に分離した要件定義書です。
+
+画面の表示と操作は [DESIGN.md](DESIGN.md)、作業の指針は [AGENTS.md](AGENTS.md) を参照してください。
+
+---
+
+## 1. 全体アーキテクチャ概要
+
+```
++---------------------------------------------------------------------------------------+
+|                                  discord-mock-opus                                    |
+|                                                                                       |
+|  [ 1. Mock 側 (apps/server & apps/web) ]                                              |
+|  - セルフホスト独立サーバー (自分の PC / VPS 限定)                                    |
+|  - Discord v10 REST API エミュレータ                                                  |
+|  - Discord Gateway (WebSocket) エミュレータ                                           |
+|  - Web UI (Discord風クライアント画面 / 管理ダッシュボード / DB Studio)                |
+|  - ローカル JSON データ永続化 (discord-mock-state.json)                               |
+|                                                                                       |
+|  [ 2. ライブラリ側 (packages/client-js & packages/test) ]                             |
+|  - testClient: 本物の Bot Client をラップし、透過的に Mock へルーティング            |
+|  - インメモリ DB エミュレータ (pg, mysql, sqlite, supabase, sheets)                   |
+|  - テストランナー & テスト DSL (@dismock/test: test, describe, expect)                |
+|  - アサーションヘルパー & ユーザーなりすましアクター (actor, bot)                     |
++---------------------------------------------------------------------------------------+
+```
+
+---
+
+## 2. Mock 側（Mock サーバー & Web UI）の要件
+
+Mock 側は、本番の Discord インフラや外部ネットワークに一切依存せず、自分の PC または自分の管理下にある VPS 上で Discord の各種プロトコルと管理インターフェースを提供するスタンドアロン型エミュレータです。
+
+### 2.1. セキュリティ & セルフホスト要件
+- **SaaS 形式の完全排除**: 昨今の脆弱性の多発を踏まえ、SaaS 形式での提供は危険と判断。マルチテナント型外部クラウドでの提供を禁止し、自分の PC または自分の管理下にある VPS でのみ動作。
+- **バインド制限**: デフォルトで `127.0.0.1` にのみバインドし、外部ネットワークからの不正アクセスを遮断。
+- **クリーンルーム実装**: Discord 公式の公開ドキュメント仕様のみに基づき、非公開 API やクライアント内部実装のリバースエンジニアリングを行わない。
+- **本番非依存**: 本番 Discord 認証（OAuth、本番 Bot Token 検証）や外部通信を行わない。
+
+### 2.2. Discord API & Gateway エミュレーション要件
+- **REST API (v10 互換)**:
+  - `/api/v10/channels/:channelId/messages`: メッセージ送信・取得
+  - `/api/v10/gateway/bot`: ローカル Gateway 接続先 URL の返却
+  - `/api/v10/users/@me/channels`: Bot からの DM チャンネル作成
+  - `/api/v10/guilds/:guildId/roles`: ロールの取得・作成
+  - `/api/mock/token`: テスト用自動トークンの生成・配布
+  - `/api/mock/interact`: スラッシュコマンド（Application Command）およびコンポーネント（ボタン、セレクト）のインタラクション受付
+  - `/api/mock/switch-user`: 操作ダミーユーザーの動的切り替え
+  - `/api/mock/state` & `/api/mock/reset`: モック内部状態の取得および初期化
+- **Gateway WebSocket エミュレーション**:
+  - Opcode 1 (Heartbeat), Opcode 2 (Identify), Opcode 4 (Voice State Update), Opcode 10 (Hello) のハンドシェイク
+  - イベントディスパッチ:
+    - `READY`: 初期接続時のギルド・ユーザー情報配信
+    - `MESSAGE_CREATE`: メッセージ受信通知
+    - `INTERACTION_CREATE`: スラッシュコマンドやボタン押下イベントの Bot への配信
+    - `VOICE_STATE_UPDATE`: ボイスチャンネルの接続・切断通知
+    - `VOICE_SERVER_UPDATE`: Bot への音声接続先の通知
+  - Bot 側のソースコード変更なし（透過的）での WebSocket 接続。
+
+### 2.3. CLI 起動要件
+- CLI で起動すると Mock サーバーが立ち上がり、URL を発行する。
+- 利用者は発行された URL をブラウザで開いて Web UI を使う。
+
+### 2.4. ダミーデータ & 永続化要件
+- ダミーユーザー、チャンネル、ロール等は、テストコードと管理画面の両方から追加でき、どちらから追加しても同じデータとして扱う。
+- モックサーバー内の状態（ギルド、チャンネル、ユーザー、ロール、メッセージ、設定）はローカルの JSON ファイル（`data/discord-mock-state.json` 等）に自動シリアライズ・保存。
+- サーバー再起動時も前回の状態を維持し、テストのシードデータとしても再利用可能。
+
+### 2.5. ログイン & 操作主体要件
+- テスト画面ではダミーユーザーを選択してログインする。
+- コマンドの実行者やボタンの押下者など、操作の主体はログイン中のダミーユーザーとする。
+
+### 2.6. ボイスチャンネル要件
+- 音声は、Bot とログイン中のダミーユーザーが同じボイスチャンネルにいるときだけ流れる。
+- 例: Bot がボイスチャンネル A で音楽を流す機能を持つ場合
+  1. Bot がボイスチャンネル A に接続する。
+  2. ログイン中のダミーユーザーもボイスチャンネル A に接続すると、音声が流れる。
+  3. ダミーユーザーが切断すると、音声が止まる。
+
+### 2.7. ダイレクトメッセージ (DM) 要件
+- Bot はそれぞれのダミーユーザーに DM を送信できる。
+- DM の内容は、宛先のユーザーでログインしたときだけ閲覧できる。
+
+### 2.8. Web UI 要件
+- テスト画面、管理画面、DB Studio を提供する。各画面の要件は [DESIGN.md](DESIGN.md) を参照。
+
+---
+
+## 3. ライブラリ側（Client SDK & テストフレームワーク）の要件
+
+ライブラリ側は、Bot 開発者が自身のコード（discord.js / drizzle 等）を修正することなく、直感的なテストやモック操作を実行するための SDK およびテストランナー群（`@dismock/client`, `@dismock/test`）です。
+
+### 3.1. クライアント統合要件 (`testClient`)
+- **コード変更ゼロでの透過的ルーティング**:
+  - 本物の `Client` インスタンスを渡すだけで、REST API エンドポイントと Gateway URL を Mock サーバーへ自動差し替え。
+  - `Proxy` パターンを採用し、本物の `Client` メソッド（`on`, `login`, `isReady` 等）と Mock 操作メソッド（`asUser`, `sendMessage`, `executeCommand` 等）の双方を同一インスタンスから呼び出し可能。
+- **重複定義の排除（設定の一本化）**:
+  - `testClient` の第 2 引数オプションに、モック URL（`mockUrl`）だけでなく、DB 設定（`db`, `setupDb`）、コマンドロード（`commands`）、認証トークン（`token`）をまとめて指定可能。
+  - `testClient` を定義するだけで、内部で自動的にテストランナーを構築し、グローバルに登録（runner との二重定義を完全解消）。
+- **利用スタイルの両立**:
+  - 引数注入型: `export const testClient = dismock.testClient(realClient, options);`
+  - クラス継承型: `export class MyTestBotClient extends dismock.TestClient { ... }`
+
+### 3.2. インメモリ DB エミュレータ要件 (`dismock.db`)
+Bot の外部インフラ依存を排除し、完全インメモリかつ高速に動作する各 DB エミュレータを提供：
+- **`dismock.db.pg` (PostgreSQL / pg.Pool / Drizzle ORM 互換)**:
+  - `node-postgres` の `Pool` インターフェース互換。
+  - Drizzle ORM の relational query に完全対応（`rowMode: 'array'`、パラメータ配列、WHERE 句 / LIMIT 句、テーブルエイリアス解決）。
+  - `seed(initialData)`: テストケース側からテーブル名と行データの配列を直接流し込み可能。
+- **`dismock.db.mysql`**: `mysql2` 互換インメモリ DB。
+- **`dismock.db.sqlite`**: `better-sqlite3` 互換インメモリ DB。
+- **`dismock.db.supabase`**: `@supabase/supabase-js` 互換インメモリクライアント。
+- **`dismock.db.sheets`**: `googleapis sheets v4` 互換インメモリスプレッドシート。
+- **`registerSchema(mockUrl, schema)`**: Bot の Drizzle スキーマを自動解析し、Mock サーバーの DB Studio にテーブル定義を同期。
+
+### 3.3. テストランナー & テスト DSL 要件 (`@dismock/test`)
+テストファイル（`__tests__/*.test.ts`）を直感的・宣言的に記述できるカスタム DSL を提供：
+- **パッケージ直インポート**:
+  - `import { test, describe, expect } from '@dismock/test';` で呼び出し可能。
+  - テストファイル側で `runner` を分割エクスポート・インポートする冗長なコードは不要。
+- **テストオプション & コンテキスト注入**:
+  - `{ users: 'login' }`: テスト開始時に自動で Bot を Mock Gateway にログインさせ、コマンドとイベントハンドラーを初期化。
+  - テスト関数に `{ bot, user, actor }` を自動注入。
+- **Actor (ダミーユーザー操作)**:
+  - `actor.sendMessage(text)`: 現在のログインユーザーとしてメッセージ送信し、Bot のイベントリスナーを発火。
+  - `actor.command(name, options)`: スラッシュコマンドを実行し、Bot からの応答（Embed, ボタン, `interaction_metadata`）を受信・アサート。
+- **Bot 状態操作 & アサーション (`bot`)**:
+  - `bot.levels.get(user)` / `bot.levels.set(user, level)`: インメモリ DB 上のデータに対する直接読み書き。
+  - `bot.users.create({ username })`: 任意の未登録ユーザーを動的生成。チャンネルやロールも同様にテストコードから追加できる（API 名は未定）。
+  - `bot.as(otherUser)`: 別のユーザー視点に切り替えてコマンドやメッセージを実行。
+  - `bot.messages(channelId?)`: Bot が送信したメッセージ履歴の取得。
+- **Vitest 互換のアサーションヘルパー**:
+  - `expect.poll(() => condition).toBe(...)` による非同期イベント発火待ち。
+  - タイムアウト拒否テスト (`expect(...).rejects.toThrow("250ms")`)。
+
+### 3.4. テストデータ管理方針
+- **初期データの注入責任**:
+  - ライブラリ側での過剰な固定データ自動生成は行わず、**テストケースを記述する開発者（または指示した AI）がテストコード内で柔軟に注入**する。
+  - `__tests__/` 内のテストファイル群は、ランナー側で自動検出・実行可能とする。
+
+---
+
+## 4. 責務分担表 (Responsibility Matrix)
+
+| 機能分野 | Mock 側 (apps/server, apps/web) | ライブラリ側 (@dismock/client, @dismock/test) |
+|---|---|---|
+| **通信・プロトコル** | REST API エンドポイント、WebSocket Gateway の実サーバー提供 | Bot の HTTP/WS 通信先をローカル Mock へ透過的に差し替え |
+| **ユーザー・権限** | ダミーユーザーの保存、DM の隔離管理、トークン自動発行 | `actor` / `bot.as(user)` によるテスト内での操作ユーザー切り替え |
+| **GUI・可視化** | Discord 風テスト画面、管理画面、DB Studio UI | なし（DB スキーマを Mock 側へ HTTP 経由で登録するのみ） |
+| **データ永続化** | `discord-mock-state.json` へのローカル永続化 | テストケース単位のインメモリ状態管理（`seed`, クリーンアップ） |
+| **データベース** | DB Studio 上でのテーブル構造・データ閲覧 | `pg`, `mysql`, `sqlite`, `supabase`, `sheets` の各インメモリ互換インスタンス提供 |
+| **テスト実行** | インタラクションやメッセージの送受信仲介 | `test`, `describe`, `expect` の DSL、コンテキスト注入、アサーション |
+
+---
+
+## 5. 未決定事項
+
+- VPS で起動したときのブラウザからのアクセス方法（デフォルトのバインド先 `127.0.0.1` には外部から届かないため）
+- Bot が送信する音声の受信方法と、ブラウザでの再生方式
+- CLI の起動コマンド名
