@@ -66,6 +66,28 @@ importers:
         specifier: ^8
         version: 8.23.1
 
+  examples/leveling-bot:
+    dependencies:
+      discord.js:
+        specifier: ^14.28.0
+        version: 14.28.0
+      drizzle-orm:
+        specifier: ^0.45.4
+        version: 0.45.4(@electric-sql/pglite@0.5.14)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(mysql2@3.24.6(@types/node@24.19.2))(pg@8.23.1)
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@dismock/client':
+        specifier: workspace:*
+        version: link:../../packages/client-js
+      '@dismock/test':
+        specifier: workspace:*
+        version: link:../../packages/test
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+
   examples/sample-bot:
     dependencies:
       better-sqlite3:

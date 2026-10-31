@@ -62,6 +62,8 @@ export interface SeedUser {
   avatar?: string | null;
   bot?: boolean;
   guild?: string;
+  /** 複数のサーバーに参加させるときに指定する。 */
+  guilds?: string[];
   roles?: string[];
   nick?: string;
 }
@@ -415,8 +417,9 @@ export class Store extends EventEmitter {
     const channels = (input.channels ?? []).map((c) => this.createChannel(resolveGuild(c.guild), c));
     const users = (input.users ?? []).map((u) => {
       const user = this.createUser(u);
-      if (u.bot !== true || u.guild) {
-        const guildId = resolveGuild(u.guild);
+      const joining = u.guilds ?? (u.bot !== true || u.guild ? [u.guild] : []);
+      for (const ref of joining) {
+        const guildId = resolveGuild(ref);
         const guild = this.requireGuild(guildId);
         const roleIds = (u.roles ?? []).map((ref) => {
           const role = guild.roles.find((r) => r.id === ref || r.name === ref);
@@ -450,6 +453,16 @@ export class Store extends EventEmitter {
     const member = this.requireGuild(guildId).members[userId];
     if (!member) throw new NotFound('Unknown Member', 10007);
     return member;
+  }
+
+  /** Discord と同じく、@everyone と所持ロールの権限の和を返す。 */
+  memberPermissions(guildId: string, userId: string): string {
+    const guild = this.requireGuild(guildId);
+    const held = new Set([guildId, ...this.requireMember(guildId, userId).roles]);
+    const permissions = guild.roles
+      .filter((role) => held.has(role.id))
+      .reduce((total, role) => total | BigInt(role.permissions), 0n);
+    return String(permissions);
   }
 
   requireChannel(id: string): Json {

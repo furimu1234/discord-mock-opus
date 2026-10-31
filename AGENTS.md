@@ -54,6 +54,7 @@ pnpm typecheck   # 型チェック
 | `packages/test` | `@dismock/test` | テストランナー、テスト DSL、画面からの実行を受けるエージェント |
 | `examples/sample-bot` | | Client を公開しない Bot。全機能の動作確認を兼ねる |
 | `examples/exported-client-bot` | | Client を公開する Bot と CommonJS の動作確認 |
+| `examples/leveling-bot` | | レベリング Bot。PostgreSQL と drizzle を使う実用的な例 |
 
 ## 絶対に守ること
 

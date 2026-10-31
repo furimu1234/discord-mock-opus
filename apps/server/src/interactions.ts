@@ -108,7 +108,11 @@ export class Interactions {
       authorizing_integration_owners: { '0': guildId ?? '0' },
       context: guildId ? 0 : 1,
       ...(guildId
-        ? { guild_id: guildId, guild_locale: 'en-US', member: { ...member, permissions: '8' } }
+        ? {
+            guild_id: guildId,
+            guild_locale: 'en-US',
+            member: { ...member, permissions: store.memberPermissions(guildId, user.id) },
+          }
         : { user }),
     };
     if (request.kind === 'command') {
@@ -191,7 +195,7 @@ export class Interactions {
       (resolved.users ??= {})[raw] = store.requireUser(raw);
       if (guildId) {
         const { user: _user, ...member } = store.requireMember(guildId, raw);
-        (resolved.members ??= {})[raw] = { ...member, permissions: '8' };
+        (resolved.members ??= {})[raw] = { ...member, permissions: store.memberPermissions(guildId, raw) };
       }
     } else if (definition.type === OptionType.role && guildId) {
       const role = store.requireGuild(guildId).roles.find((r) => r.id === raw);
