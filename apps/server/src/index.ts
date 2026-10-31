@@ -1,18 +1,20 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { DEFAULT_HOST } from './constants.js';
 import { Gateway } from './gateway.js';
 import { Interactions } from './interactions.js';
 import { Rest } from './rest.js';
 import { TestRegistry } from './tests.js';
 import { Store } from './store.js';
 
+export { DEFAULT_HOST, DEFAULT_PORT } from './constants.js';
 export { Store } from './store.js';
 export type { Json, SeedChannel, SeedGuild, SeedInput, SeedRole, SeedUser } from './store.js';
 export type { InteractRequest, InteractResult } from './interactions.js';
 export type { TestCaseInfo, TestProject, TestResult } from './tests.js';
 
 export interface MockServerOptions {
-  /** 既定は `127.0.0.1`。 */
+  /** 既定は `DEFAULT_HOST`。 */
   host?: string;
   /** 既定は `0`（空いているポートを自動で割り当てる）。 */
   port?: number;
@@ -33,7 +35,7 @@ export interface MockServer {
 }
 
 export async function startServer(options: MockServerOptions = {}): Promise<MockServer> {
-  const host = options.host ?? '127.0.0.1';
+  const host = options.host ?? DEFAULT_HOST;
   const store = new Store(options.dataFile);
   let url = '';
 

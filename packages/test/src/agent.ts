@@ -1,11 +1,8 @@
 import type { ChildProcess } from 'node:child_process';
 import { basename, resolve } from 'node:path';
 import { connection, StartupError } from '@dismock/client';
+import { EXIT_STARTUP_FAILURE, MARK_LIST, MARK_READY } from './constants.js';
 import { findSetup, findTests, spawnRunner } from './spawn.js';
-
-const EXIT_STARTUP_FAILURE = 2;
-const MARK_LIST = '__DISMOCK_LIST__';
-const MARK_READY = '__DISMOCK_READY__';
 
 interface Project {
   name: string;

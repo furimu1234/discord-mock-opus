@@ -1,9 +1,10 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { EXIT_STARTUP_FAILURE, ROOT } from './run-tests.mjs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const READY_MESSAGE = 'Discord Mock:';
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function fail(message, code = 1) {
   console.error(`app を終了します: ${message}`);
@@ -12,6 +13,9 @@ function fail(message, code = 1) {
 
 const build = spawnSync('pnpm', ['build'], { cwd: ROOT, stdio: 'inherit' });
 if (build.status !== 0) fail('ビルドに失敗しました');
+
+// ビルドで生成されるため、ビルドの後に読み込む。
+const { EXIT_STARTUP_FAILURE } = await import('../packages/test/dist/constants.js');
 
 const mock = spawn(process.execPath, ['apps/server/bin/dismock-server.js'], {
   cwd: ROOT,

@@ -1,11 +1,11 @@
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { startServer } from './index.js';
+import { DEFAULT_HOST, DEFAULT_PORT, startServer } from './index.js';
 
 const { values } = parseArgs({
   options: {
-    host: { type: 'string', default: '127.0.0.1' },
-    port: { type: 'string', default: '6470' },
+    host: { type: 'string', default: DEFAULT_HOST },
+    port: { type: 'string', default: String(DEFAULT_PORT) },
     data: { type: 'string', default: 'data/discord-mock-state.json' },
   },
 });

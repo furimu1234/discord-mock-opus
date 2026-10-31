@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { DEFAULT_HOST, DEFAULT_PORT } from '@dismock/server/constants';
 import { runtime } from './runtime.js';
 
 const DATA_FILE = join('data', 'discord-mock-state.json');
-const DEFAULT_URL = 'http://127.0.0.1:6470';
+const DEFAULT_URL = `http://${DEFAULT_HOST}:${DEFAULT_PORT}`;
 
 export interface Connection {
   url: string;

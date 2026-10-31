@@ -1,13 +1,10 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { closeEngines, connection, db, runtime, snapshotEngines, StartupError, type TestClient } from '@dismock/client';
+import { EXIT_STARTUP_FAILURE, MARK_LIST, MARK_READY } from './constants.js';
 import { createSuite, setCurrentSuite, type HookFn, type Suite, type TestCase, type TestContext } from './index.js';
 
 const DEFAULT_TIMEOUT_MS = 5000;
-/** テストの失敗（1）と区別する終了コード。`pnpm app` はこれを見て Mock も止める。 */
-const EXIT_STARTUP_FAILURE = 2;
-const MARK_LIST = '__DISMOCK_LIST__';
-const MARK_READY = '__DISMOCK_READY__';
 const LIVE_DB_INTERVAL_MS = 1000;
 
 interface RunConfig {

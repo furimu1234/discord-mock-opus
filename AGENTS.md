@@ -69,4 +69,5 @@ pnpm typecheck   # 型チェック
 
 - Bot 側のソースコードを変更しなくても動くことを保ってください。`examples/*/src` は Bot のコードとして扱い、モックの都合で書き換えないでください。
 - 機能を実装する前に、[CLAUDE.md](CLAUDE.md) の該当する節を確認してください。画面を実装する場合は [DESIGN.md](DESIGN.md) も確認してください。
-- 実装で仕様が決まったら、[CLAUDE.md](CLAUDE.md) 5 章と [DESIGN.md](DESIGN.md) の未決定の事項を更新してください。
+- 実装で仕様が決まったら、[CLAUDE.md](CLAUDE.md) 6 章と [DESIGN.md](DESIGN.md) の未決定の事項を更新してください。
+- 値をハードコーディングしないでください。規則と例外は [CLAUDE.md](CLAUDE.md) 5 章にあります。

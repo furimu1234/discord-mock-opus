@@ -2,9 +2,9 @@ import { spawn } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { EXIT_STARTUP_FAILURE } from '../packages/test/dist/constants.js';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const EXIT_STARTUP_FAILURE = 2;
 
 const DISMOCK = join(ROOT, 'packages/test/bin/dismock.js');
 
