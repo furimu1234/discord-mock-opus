@@ -11,7 +11,7 @@ export { DEFAULT_HOST, DEFAULT_PORT } from './constants.js';
 export { Store } from './store.js';
 export type { Json, SeedChannel, SeedGuild, SeedInput, SeedRole, SeedUser } from './store.js';
 export type { InteractRequest, InteractResult } from './interactions.js';
-export type { TestCaseInfo, TestProject, TestResult } from './tests.js';
+export type { TestCaseInfo, TestProject, TestResult, TrafficEntry } from './tests.js';
 
 export interface MockServerOptions {
   /** 既定は `DEFAULT_HOST`。 */
@@ -41,7 +41,7 @@ export async function startServer(options: MockServerOptions = {}): Promise<Mock
 
   const gatewayUrl = () => `${url.replace(/^http/, 'ws')}/gateway`;
   const gateway = new Gateway(store, gatewayUrl);
-  const interactions = new Interactions(store, (event, data) => gateway.broadcast(event, data));
+  const interactions = new Interactions(store, (event, data) => store.emit('dispatch', event, data));
   const tests = new TestRegistry(store);
   const rest = new Rest(store, interactions, tests, gatewayUrl, () => gateway.hasBot, options.webDir);
   if (options.clearOnStart) store.clearAll();

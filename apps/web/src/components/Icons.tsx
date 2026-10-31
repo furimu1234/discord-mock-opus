@@ -56,6 +56,12 @@ export const DatabaseIcon = () => (
   </Icon>
 );
 
+export const ListIcon = () => (
+  <Icon size={24}>
+    <path d="M4 5h3v3H4V5Zm5 .5h11v2H9v-2ZM4 10.500h3v3H4v-3Zm5 .5h11v2H9v-2ZM4 16h3v3H4v-3Zm5 .5h11v2H9v-2Z" />
+  </Icon>
+);
+
 export const ChevronIcon = () => (
   <Icon size={12}>
     <path d="m7 9 5 5 5-5 2 2-7 7-7-7 2-2Z" />

@@ -4,7 +4,7 @@ import { api, type Json } from '../api';
 const PAGE_SIZE = 50;
 
 /** `null` は接続中の Bot の DB、それ以外はテスト終了時の DB を表す。 */
-export type StudioSource = { project: string; id: string } | null;
+export type StudioSource = { runId: string; id: string; label: string } | null;
 
 interface StudioPageProps {
   tests: Json | null;
@@ -38,14 +38,14 @@ function compareCells(a: unknown, b: unknown): number {
 }
 
 /** 画面の選択肢に使う、DB の内容が残っているテストケースの一覧。 */
-function testSources(tests: Json | null): { project: string; id: string; label: string }[] {
+function testSources(tests: Json | null): NonNullable<StudioSource>[] {
   const projects = (tests?.projects ?? []) as Json[];
   return projects.flatMap((project) =>
     Object.entries<Json>(tests?.results?.[project.name] ?? {})
       .filter(([, result]) => result.hasDb)
-      .map(([id]) => {
+      .map(([id, result]) => {
         const test = (project.tests as Json[]).find((t) => t.id === id);
-        return { project: project.name, id, label: `${project.name}: ${test?.name ?? id}` };
+        return { runId: result.runId as string, id, label: `${project.name}: ${test?.name ?? id}` };
       }),
   );
 }
@@ -59,10 +59,10 @@ export function StudioPage({ tests, source, onSource, onError }: StudioPageProps
 
   const sources = testSources(tests);
   const liveUpdatedAt = tests?.liveDb?.updatedAt as string | undefined;
-  const sourceKey = source ? `${source.project}\n${source.id}` : '';
+  const sourceKey = source ? `${source.runId}\n${source.id}` : '';
 
   useEffect(() => {
-    const query = source ? `?project=${encodeURIComponent(source.project)}&id=${encodeURIComponent(source.id)}` : '';
+    const query = source ? `?run=${source.runId}&id=${encodeURIComponent(source.id)}` : '';
     api.get(`/db${query}`).then(setSnapshot, (error: Error) => onError(error.message));
   }, [source, liveUpdatedAt]);
 
@@ -98,8 +98,7 @@ export function StudioPage({ tests, source, onSource, onError }: StudioPageProps
   };
 
   const selectSource = (value: string) => {
-    const [project, id] = value.split('\n');
-    onSource(project && id ? { project, id } : null);
+    onSource(sources.find((s) => `${s.runId}\n${s.id}` === value) ?? null);
   };
 
   const emptyMessage = source
@@ -116,8 +115,10 @@ export function StudioPage({ tests, source, onSource, onError }: StudioPageProps
             表示するデータ
             <select aria-label="表示するデータ" value={sourceKey} onChange={(event) => selectSource(event.target.value)}>
               <option value="">接続中の Bot{tests?.liveDb ? `（${tests.liveDb.project}）` : ''}</option>
-              {source && !sources.some((s) => s.id === source.id) && <option value={sourceKey}>{source.id}</option>}
-              {sources.map((s) => <option key={`${s.project}\n${s.id}`} value={`${s.project}\n${s.id}`}>{s.label}</option>)}
+              {source && !sources.some((s) => s.runId === source.runId && s.id === source.id) && (
+                <option value={sourceKey}>{source.label}</option>
+              )}
+              {sources.map((s) => <option key={`${s.runId}\n${s.id}`} value={`${s.runId}\n${s.id}`}>{s.label}</option>)}
             </select>
           </label>
         </div>

@@ -4,14 +4,15 @@ import { AdminPage } from './components/AdminPage';
 import { Avatar, colorOf, displayName } from './components/Avatar';
 import { Composer } from './components/Composer';
 import {
-  BeakerIcon, ChatIcon, ChevronIcon, DatabaseIcon, GearIcon, HangUpIcon, HashIcon, PlusIcon, SpeakerIcon, UsersIcon,
+  BeakerIcon, ChatIcon, ChevronIcon, DatabaseIcon, GearIcon, ListIcon, HangUpIcon, HashIcon, PlusIcon, SpeakerIcon, UsersIcon,
 } from './components/Icons';
 import { Message } from './components/Message';
 import { ModalDialog } from './components/ModalDialog';
+import { RunsPage, type RunSelection } from './components/RunsPage';
 import { StudioPage, type StudioSource } from './components/StudioPage';
 import { TestsPage, TestsPanel, type TestListProps } from './components/TestsPage';
 
-type View = { kind: 'guild'; guildId: string } | { kind: 'dm' } | { kind: 'tests' } | { kind: 'studio' } | { kind: 'admin' };
+type View = { kind: 'guild'; guildId: string } | { kind: 'dm' } | { kind: 'tests' } | { kind: 'runs' } | { kind: 'studio' } | { kind: 'admin' };
 type PanelTab = 'members' | 'tests';
 
 const TEXT = 0;
@@ -41,6 +42,7 @@ function ServerRail({ view, guilds, onSelect }: { view: View; guilds: Json[]; on
       <div className="rail-spacer" />
       <div className="rail-separator" />
       {railButton('tests', 'テスト', view.kind === 'tests', { kind: 'tests' }, <BeakerIcon />)}
+      {railButton('runs', '実行結果', view.kind === 'runs', { kind: 'runs' }, <ListIcon />)}
       {railButton('studio', 'DB Studio', view.kind === 'studio', { kind: 'studio' }, <DatabaseIcon />)}
       {railButton('admin', '管理', view.kind === 'admin', { kind: 'admin' }, <GearIcon />)}
     </nav>
@@ -289,6 +291,8 @@ export function App() {
   const [projectName, setProjectName] = useState<string | null>(null);
   const lastChannelId = useRef<string | null>(null);
   const [studioSource, setStudioSource] = useState<StudioSource>(null);
+  const [runSelection, setRunSelection] = useState<RunSelection>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -337,9 +341,18 @@ export function App() {
   const openDm = async () => (await api.post('/dm', { userId: activeUser?.id })).id as string;
 
   const showsChat = current.kind === 'guild' || current.kind === 'dm';
-  const openDb = (project: string, id: string) => {
-    setStudioSource({ project, id });
+  const openDb = (runId: string, id: string, label: string) => {
+    setStudioSource({ runId, id, label });
     setView({ kind: 'studio' });
+  };
+  const openRun = (runId: string, testId: string) => {
+    setRunSelection({ runId, testId });
+    setView({ kind: 'runs' });
+  };
+  const toggleCategory = (key: string) => {
+    const next = new Set(collapsed);
+    if (!next.delete(key)) next.add(key);
+    setCollapsed(next);
   };
   const testList: TestListProps = {
     tests,
@@ -347,7 +360,10 @@ export function App() {
     onProject: setProjectName,
     channelId: lastChannelId.current,
     onError,
+    collapsed,
+    onToggleCategory: toggleCategory,
     onOpenDb: openDb,
+    onOpenRun: openRun,
   };
   const panel = <SidePanel tab={panelTab} onTab={setPanelTab} guild={guild} state={state} testList={testList} />;
   const togglePanel = () => setShowPanel(!showPanel);
@@ -387,6 +403,9 @@ export function App() {
           resolveChannel={openDm} onError={onError} panel={panel} showPanel={showPanel} onTogglePanel={togglePanel} />
       )}
       {current.kind === 'tests' && <TestsPage {...testList} />}
+      {current.kind === 'runs' && (
+        <RunsPage tests={tests} selection={runSelection} onSelect={setRunSelection} onError={onError} onOpenDb={openDb} />
+      )}
       {current.kind === 'studio' && <StudioPage tests={tests} source={studioSource} onSource={setStudioSource} onError={onError} />}
       {current.kind === 'admin' && <AdminPage state={state} tests={tests} onError={onError} />}
       {toast && <div className="toast" role="alert">{toast}</div>}

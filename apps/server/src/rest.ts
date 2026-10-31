@@ -236,7 +236,9 @@ export class Rest {
       tests.publishLiveDb(body.project, body.db);
       return { ok: true };
     });
-    mock('GET', '/db', ({ query }) => tests.readDb(query.get('project'), query.get('id')));
+    mock('GET', '/db', ({ query }) => tests.readDb(query.get('run'), query.get('id')));
+    mock('GET', '/runs', () => tests.listRuns());
+    mock('GET', '/runs/:id', ({ params }) => tests.readRun(params.id!));
     mock('POST', '/tests/finish', ({ body }) => {
       tests.finish(body.activeBot ?? null);
       return { ok: true };
@@ -274,6 +276,13 @@ export class Rest {
   }
 
   async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const method = req.method ?? 'GET';
+    let path = '';
+    let body: Json | null = null;
+    const reply = (status: number, data: unknown) => {
+      if (path.startsWith('/api/v10')) this.tests.recordRest(method, path, status, body, data);
+      this.json(res, status, data);
+    };
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
       if (!url.pathname.startsWith('/api/')) {
@@ -281,32 +290,33 @@ export class Rest {
         return this.json(res, 404, { message: '404: Not Found', code: 0 });
       }
       // discord.js は `@original` を `%40original` として送る。
-      const path = url.pathname.replaceAll('%40', '@');
+      path = url.pathname.replaceAll('%40', '@');
       if (path === '/api/mock/events') return this.events(req, res, url.searchParams.get('role'));
-      const route = this.find(req.method ?? 'GET', path);
+      const route = this.find(method, path);
       if (!route) {
-        console.warn(`[dismock] 未対応のルート: ${req.method} ${path}`);
-        return this.json(res, 404, { message: '404: Not Found', code: 0 });
+        console.warn(`[dismock] 未対応のルート: ${method} ${path}`);
+        return reply(404, { message: '404: Not Found', code: 0 });
       }
       if (path.startsWith('/api/mock') && !this.allowed(req)) {
-        return this.json(res, 415, { message: 'application/json が必要です', code: 0 });
+        return reply(415, { message: 'application/json が必要です', code: 0 });
       }
       if (!this.authenticated(req, path)) {
-        return this.json(res, 401, { message: '401: Unauthorized', code: 0 });
+        return reply(401, { message: '401: Unauthorized', code: 0 });
       }
       const params = Object.fromEntries(
         route.keys.map((key, i) => [key, decodeURIComponent(route.match[i + 1]!)]),
       );
-      const body = await this.readBody(req);
+      body = await this.readBody(req);
       const result = await route.handler({ params, query: url.searchParams, body });
       if (result === NO_CONTENT) {
+        if (path.startsWith('/api/v10')) this.tests.recordRest(method, path, 204, body, null);
         res.writeHead(204).end();
         return;
       }
-      this.json(res, 200, result);
+      reply(200, result);
     } catch (error) {
       const failure = error as Error & { status?: number; code?: number };
-      this.json(res, failure.status ?? 400, { message: failure.message, code: failure.code ?? 0 });
+      reply(failure.status ?? 400, { message: failure.message, code: failure.code ?? 0 });
     }
   }
 
