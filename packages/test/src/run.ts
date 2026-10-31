@@ -126,7 +126,7 @@ async function runTest(test: TestCase, suite: Suite, title: string, id: string, 
     for (const s of order) for (const hook of select(s)) await hook(local);
   };
   try {
-    const prepared = await context.bot?.prepare(test.options);
+    const prepared = await context.bot?.prepare({ ...test.options, label: title });
     const local = { ...context, ...prepared } as TestContext;
     await withTimeout(async () => {
       try {

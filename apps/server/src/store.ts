@@ -7,6 +7,7 @@ export type Json = Record<string, any>;
 
 const DISCORD_EPOCH = 1420070400000n;
 const ADMINISTRATOR = '8';
+const EPHEMERAL = 64;
 const EVERYONE_PERMISSIONS = '2248473465835073';
 
 export const ChannelType = { text: 0, dm: 1, voice: 2, category: 4 } as const;
@@ -126,6 +127,10 @@ export class Store extends EventEmitter {
   private saveTimer: NodeJS.Timeout | null = null;
   /** テストの実行中に退避している状態。JSON にはこちらを保存する。 */
   private saved: MockState | null = null;
+  /** テスト中のメッセージ。テストごとに状態を消しても、終了後に画面へ残す。 */
+  private archived: Json[] = [];
+  /** 実行中のテストの名前。最初のテストが始まるまでは `undefined`。 */
+  private testLabel: string | undefined;
 
   constructor(private readonly file?: string) {
     super();
@@ -169,7 +174,9 @@ export class Store extends EventEmitter {
   }
 
   /** トークンと Bot のユーザー、アプリケーション、登録済みコマンドを残して初期化する。 */
-  reset(): void {
+  reset(testLabel?: string): void {
+    this.archiveMessages();
+    if (this.saved) this.testLabel = testLabel ?? '';
     const { token, url, applicationId, botUserId, commands } = this.state;
     const bot = this.botUser;
     this.state = { ...emptyState(), token, url, applicationId, botUserId, commands, users: { [botUserId]: bot } };
@@ -186,13 +193,56 @@ export class Store extends EventEmitter {
   /** テストの開始時に状態を退避する。実行中に JSON のダミーデータは変わらない。 */
   beginTestSession(): void {
     this.saved ??= structuredClone(this.state);
+    this.archived = [];
+    this.testLabel = undefined;
+  }
+
+  /** テスト中のメッセージを退避する。DM とエフェメラルは公開しない。 */
+  private archiveMessages(): void {
+    if (!this.saved || this.testLabel === undefined) return;
+    const messages = Object.entries(this.state.messages)
+      .filter(([id]) => !this.state.channels[id]?.recipients)
+      .flatMap(([, list]) => list)
+      .filter((message) => ((message.flags as number) & EPHEMERAL) === 0)
+      .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+    if (messages.length === 0) return;
+    const divider = {
+      id: snowflake(),
+      author: this.botUser,
+      content: '',
+      timestamp: messages[0]!.timestamp,
+      flags: 0,
+      dismock_test: this.testLabel,
+    };
+    this.archived.push(divider, ...messages);
+  }
+
+  /** 退避したメッセージを、最初のサーバーの最初のテキストチャンネルへ追加する。 */
+  private restoreArchivedMessages(): void {
+    if (this.archived.length === 0) return;
+    const channels = Object.values(this.state.channels)
+      .filter((channel) => channel.type === ChannelType.text)
+      .sort((a, b) => a.position - b.position);
+    const guildId = Object.keys(this.state.guilds)[0];
+    const target =
+      channels.find((channel) => channel.guild_id === guildId) ??
+      this.seed({ channels: [{ name: 'テスト結果' }] }).channels[0];
+    const messages = (this.state.messages[target.id] ??= []);
+    for (const message of this.archived) {
+      messages.push({ ...message, channel_id: target.id, guild_id: target.guild_id });
+    }
+    target.last_message_id = messages.at(-1)!.id;
+    this.archived = [];
   }
 
   /** テストの開始前の状態に戻す。Bot が登録したコマンドは引き継ぐ。 */
   endTestSession(): void {
     if (!this.saved) return;
+    this.archiveMessages();
     this.state = { ...this.saved, commands: this.state.commands };
     this.saved = null;
+    this.testLabel = undefined;
+    this.restoreArchivedMessages();
     this.changed();
   }
 

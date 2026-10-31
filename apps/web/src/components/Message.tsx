@@ -19,11 +19,15 @@ interface MessageProps {
 }
 
 /** 本文を読み取り専用の要素へ変換する。HTML としては扱わない。 */
-function renderContent(content: string, state: Json, guildId?: string): ReactNode[] {
+function renderContent(content: string, state: Json, guildId?: string, mentions: Json[] = []): ReactNode[] {
   const pattern = /(<@!?\d+>|<@&\d+>|<#\d+>|\*\*[^*]+\*\*|`[^`]+`)/g;
   return content.split(pattern).map((part, index) => {
     const user = /^<@!?(\d+)>$/.exec(part);
-    if (user) return <span key={index} className="mention">@{displayName(state.users[user[1]!])}</span>;
+    if (user) {
+      // テストのユーザーは終了後に消えるため、メッセージが持つ情報も使う。
+      const mentioned = state.users[user[1]!] ?? mentions.find((m) => m.id === user[1]);
+      return <span key={index} className="mention">@{displayName(mentioned)}</span>;
+    }
     const role = /^<@&(\d+)>$/.exec(part);
     if (role) {
       const found = state.guilds[guildId ?? '']?.roles.find((r: Json) => r.id === role[1]);
@@ -107,12 +111,23 @@ const time = (value: string) =>
   new Date(value).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 function isContinuation(message: Json, previous?: Json): boolean {
-  if (!previous || previous.author.id !== message.author.id) return false;
+  if (!previous || previous.dismock_test !== undefined || previous.author.id !== message.author.id) return false;
   if (message.referenced_message || message.interaction_metadata) return false;
   return Date.parse(message.timestamp) - Date.parse(previous.timestamp) < 7 * 60 * 1000;
 }
 
-export function Message({ message, previous, state, activeUser, onResult, onError }: MessageProps) {
+export function Message(props: MessageProps) {
+  if (props.message.dismock_test !== undefined) {
+    return (
+      <div className="test-divider" role="separator">
+        <span>テスト: {props.message.dismock_test}</span>
+      </div>
+    );
+  }
+  return <ChatMessage {...props} />;
+}
+
+function ChatMessage({ message, previous, state, activeUser, onResult, onError }: MessageProps) {
   const [picking, setPicking] = useState(false);
   const flags = (message.flags ?? 0) as number;
   const guildId = message.guild_id as string | undefined;
@@ -150,7 +165,7 @@ export function Message({ message, previous, state, activeUser, onResult, onErro
           {flags & LOADING ? (
             <div className="thinking">Bot が考えています…</div>
           ) : (
-            message.content && <div className="content">{renderContent(message.content, state, guildId)}</div>
+            message.content && <div className="content">{renderContent(message.content, state, guildId, message.mentions)}</div>
           )}
           {message.attachments?.map((file: Json) => (
             <div key={file.id} className="attachment">📎 {file.filename} <small>{file.size} bytes</small></div>

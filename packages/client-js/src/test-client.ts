@@ -50,6 +50,8 @@ export interface TestClientOptions {
 export interface PrepareOptions {
   users?: 'login';
   seed?: TestSeed;
+  /** 画面に残すメッセージの区切りに表示するテスト名。 */
+  label?: string;
 }
 
 export interface Prepared {
@@ -175,7 +177,7 @@ export class TestClient {
   /** テストの開始前に状態を初期化する。 */
   async prepare(options: PrepareOptions = {}): Promise<Prepared> {
     const api = await this.mock();
-    await api.reset();
+    await api.reset(options.label);
     this.clearCaches();
     this.defaultChannelId = undefined;
     this.defaultGuildId = undefined;

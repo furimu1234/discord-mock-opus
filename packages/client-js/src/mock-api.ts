@@ -25,7 +25,7 @@ export class MockApi {
   }
 
   state = () => this.request<Json>('/state');
-  reset = () => this.post('/reset');
+  reset = (label?: string) => this.post('/reset', { label });
   seed = (input: SeedInput) => this.post<Json>('/seed', input);
   switchUser = (userId: string) => this.post('/switch-user', { userId });
   interact = (request: InteractRequest) => this.post<InteractResult>('/interact', request);

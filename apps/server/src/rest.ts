@@ -165,9 +165,9 @@ export class Rest {
       this.route(method, `/api/mock${path}`, handler);
 
     mock('GET', '/state', () => ({ ...store.publicState(), botConnected: this.botConnected() }));
-    mock('POST', '/reset', () => {
+    mock('POST', '/reset', ({ body }) => {
       interactions.clear();
-      store.reset();
+      store.reset(body.label);
       return { ok: true };
     });
     mock('POST', '/seed', ({ body }) => store.seed(body));

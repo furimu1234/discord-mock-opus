@@ -114,6 +114,8 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; backgr
 .message { position: relative; padding: 2px 48px 2px 16px; margin-top: 16px; }
 .message.compact { margin-top: 0; }
 .message:hover { background: #2e3035; }
+.test-divider { display: flex; align-items: center; gap: 8px; margin: 24px 16px 8px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.test-divider::before, .test-divider::after { content: ''; flex: 1; height: 1px; background: var(--bg-active); }
 .message-context { display: flex; align-items: center; gap: 4px; padding-left: 56px; font-size: 13px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reply-line { width: 28px; height: 10px; margin-left: -36px; margin-right: 6px; border-left: 2px solid #4e5058; border-top: 2px solid #4e5058; border-top-left-radius: 6px; flex: none; align-self: flex-end; }
 .command-name { color: var(--mention-text); }
