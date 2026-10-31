@@ -49,7 +49,7 @@ pkgs.mkShell {
   ];
 
   shellHook = ''
-    export DISMOCK_ROOT="$PWD"
+    export DISMOCK_ROOT="${toString ./.}"
     export DISMOCK_LOCAL="$DISMOCK_ROOT/.local"
 
     # ホームディレクトリに書き込まないよう、各ツールの保存先を変更する。

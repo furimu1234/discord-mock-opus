@@ -1,0 +1,10 @@
+{
+  "terminal.integrated.profiles.linux": {
+    "nix-shell": {
+      "path": "nix-shell",
+      "args": ["${workspaceFolder}/shell.nix", "--command", "exec zsh"],
+      "icon": "terminal-linux"
+    }
+  },
+  "terminal.integrated.defaultProfile.linux": "nix-shell"
+}

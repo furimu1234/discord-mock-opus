@@ -18,7 +18,7 @@ Discord Bot のテストを自動化するための Discord モックです。Bo
 
 ## 開発環境
 
-すべてのコマンドは `nix-shell` の中で実行してください。Node.js、pnpm、Python は [shell.nix](shell.nix) で固定しています。pnpm のストア、キャッシュ、一時ファイルは `.local/` に、Python の仮想環境は `.venv/` に置きます。
+すべてのコマンドは `nix-shell` の中で実行してください。VS Code の統合ターミナルは [.vscode/settings.json](.vscode/settings.json) の設定により、開くと自動で `nix-shell` に入ります。Node.js、pnpm、Python は [shell.nix](shell.nix) で固定しています。pnpm のストア、キャッシュ、一時ファイルは `.local/` に、Python の仮想環境は `.venv/` に置きます。
 
 ```sh
 nix-shell

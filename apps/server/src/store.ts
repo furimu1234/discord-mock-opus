@@ -126,6 +126,8 @@ export class Store extends EventEmitter {
   constructor(private readonly file?: string) {
     super();
     this.state = file && existsSync(file) ? this.load(file) : emptyState();
+    // ポートの競合などで起動に失敗しても、トークンは発行済みの状態にする。
+    this.flush();
   }
 
   private load(file: string): MockState {
