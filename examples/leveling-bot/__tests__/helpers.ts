@@ -49,3 +49,10 @@ export function topMembers(db: Database, guildId: string, limit: number) {
       [guildId, limit],
     );
 }
+
+/** 現在の XP を保ったまま、クールダウンを明けた状態にする。 */
+export async function expireCooldown(db: Database, guildId: string, userId: string): Promise<number> {
+  const xp = (await memberXp(db, guildId, userId)) ?? 0;
+  await setMemberXp(db, guildId, userId, xp);
+  return xp;
+}

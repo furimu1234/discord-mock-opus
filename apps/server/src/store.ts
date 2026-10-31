@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { DEFAULT_USERS } from './constants.js';
 
 export type Json = Record<string, any>;
 
@@ -66,6 +67,8 @@ export interface SeedUser {
   guilds?: string[];
   roles?: string[];
   nick?: string;
+  /** テストが追加したユーザー。型定義の補完の対象にしない。 */
+  temporary?: boolean;
 }
 
 export interface SeedGuild {
@@ -210,7 +213,7 @@ export class Store extends EventEmitter {
         { name: 'ボイス', type: 'voice', parent: 'ボイスチャンネル' },
       ],
       roles: [{ name: '管理者', permissions: ADMINISTRATOR, color: 0xe67e22, hoist: true }],
-      users: [{ username: 'alice', roles: ['管理者'] }, { username: 'bob' }],
+      users: DEFAULT_USERS.map((user, index) => ({ ...user, roles: index === 0 ? ['管理者'] : [] })),
     });
     this.state.activeUserId = users[0].id;
     this.changed();
@@ -295,6 +298,7 @@ export class Store extends EventEmitter {
       discriminator: '0',
       global_name: input.globalName ?? null,
       avatar: input.avatar ?? null,
+      ...(input.temporary ? { temporary: true } : {}),
       bot: input.bot ?? false,
       system: false,
       public_flags: 0,

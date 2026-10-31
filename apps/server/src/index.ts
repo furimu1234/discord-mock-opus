@@ -7,7 +7,7 @@ import { Rest } from './rest.js';
 import { TestRegistry } from './tests.js';
 import { Store } from './store.js';
 
-export { DEFAULT_HOST, DEFAULT_PORT } from './constants.js';
+export { DEFAULT_HOST, DEFAULT_PORT, DEFAULT_USERS } from './constants.js';
 export { Store } from './store.js';
 export type { Json, SeedChannel, SeedGuild, SeedInput, SeedRole, SeedUser } from './store.js';
 export type { InteractRequest, InteractResult } from './interactions.js';

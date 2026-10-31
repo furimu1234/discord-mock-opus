@@ -4,6 +4,7 @@ import { LEADERBOARD_SIZE, levelForXp, xpForLevel } from '../src/levels.ts';
 import {
   clearGuildXp,
   expectedRank,
+  expireCooldown,
   memberXp,
   OTHER_CHANNEL,
   OTHER_GUILD,
@@ -11,21 +12,20 @@ import {
   topMembers,
 } from './helpers.ts';
 
-const MANAGE_GUILD = '32';
+// 既定のダミーユーザー。alice は管理者で、bob には権限がない。
+const ADMIN = 'alice';
+const NON_ADMIN = 'bob';
 const EPHEMERAL = 64;
 const HIGH_LEVEL = 3;
 const LOW_LEVEL = 1;
 
-const adminSeed = {
-  roles: [{ name: 'staff', permissions: MANAGE_GUILD }, { name: 'bronze' }, { name: 'gold' }],
-  users: [{ username: 'admin', roles: ['staff'] }, { username: 'target' }],
-};
-const memberSeed = { users: [{ username: 'target' }] };
+const targetSeed = { users: [{ username: 'target' }] };
+const rewardSeed = { ...targetSeed, roles: [{ name: 'bronze' }, { name: 'gold' }] };
 
 type Seeded = Record<string, any>;
 
-const usersOf = ({ users }: Seeded) => ({ admin: users[0], target: users[1] });
-const rolesOf = ({ roles }: Seeded) => ({ bronze: roles[1].id as string, gold: roles[2].id as string });
+const targetOf = ({ users }: Seeded) => users[0];
+const rolesOf = ({ roles }: Seeded) => ({ bronze: roles[0].id as string, gold: roles[1].id as string });
 
 const fieldsOf = (reply: Record<string, any>) =>
   Object.fromEntries(reply.embeds[0].fields.map((field: { name: string; value: string }) => [field.name, field.value]));
@@ -59,32 +59,31 @@ describe('コマンド', () => {
       },
     );
 
-    test('他のユーザーを指定できる', { users: 'login', seed: memberSeed }, async ({ actor, user, guild, db }) => {
+    test('他のユーザーを指定できる', { users: 'login', seed: targetSeed }, async ({ actor, seeded, guild, db }) => {
+      const target = targetOf(seeded);
       const xp = xpForLevel(HIGH_LEVEL);
-      await setMemberXp(db, guild.id, user.id, xp);
-      const reply = await actor.command('rank', { user: user.id });
+      await setMemberXp(db, guild.id, target.id, xp);
+      const reply = await actor.command('rank', { user: target.id });
       expect(fieldsOf(reply)).toEqual(rankFields(xp, await expectedRank(db, guild.id, xp)));
     });
 
-    test('XP の高いメンバーが増えると順位が下がる', { users: 'login', seed: { users: [{ username: 'a' }, { username: 'b' }] } }, async ({ actor, guild, seeded, user, db }) => {
-      const xp = xpForLevel(LOW_LEVEL);
-      await setMemberXp(db, guild.id, user.id, xp);
+    test('XP の高いメンバーが増えると順位が下がる', { users: 'login', seed: targetSeed }, async ({ actor, seeded, user, guild, db }) => {
+      const xp = await expireCooldown(db, guild.id, user.id);
       const before = await expectedRank(db, guild.id, xp);
-      await setMemberXp(db, guild.id, seeded.users[1].id, xp + 1);
+      await setMemberXp(db, guild.id, targetOf(seeded).id, xp + 1);
       const reply = await actor.command('rank');
       expect(fieldsOf(reply)).toEqual(rankFields(xp, before + 1));
     });
 
-    test('順位は他のサーバーの XP を含めない', { users: 'login', seed: memberSeed }, async ({ actor, guild, user, db }) => {
-      const xp = xpForLevel(LOW_LEVEL);
-      await setMemberXp(db, guild.id, user.id, xp);
+    test('順位は他のサーバーの XP を含めない', { users: 'login' }, async ({ actor, guild, user, db }) => {
+      const xp = await expireCooldown(db, guild.id, user.id);
       await setMemberXp(db, OTHER_GUILD, 'other-guild-member', xp + 1);
       const reply = await actor.command('rank');
       expect(fieldsOf(reply)).toEqual(rankFields(xp, await expectedRank(db, guild.id, xp)));
     });
 
-    test('XP がないユーザーは最初のレベル', { users: 'login', seed: memberSeed }, async ({ actor, guild, db }) => {
-      const reply = await actor.command('rank');
+    test('XP がないユーザーは最初のレベル', { users: 'login', seed: targetSeed }, async ({ actor, seeded, guild, db }) => {
+      const reply = await actor.command('rank', { user: targetOf(seeded).id });
       expect(fieldsOf(reply)).toEqual(rankFields(0, await expectedRank(db, guild.id, 0)));
     });
   });
@@ -100,8 +99,8 @@ describe('コマンド', () => {
       expect(reply.embeds[0].description.split('\n')).toEqual(await leaderboardLines(db, guild.id));
     });
 
-    test('他のサーバーのメンバーを含めない', { users: 'login', seed: memberSeed }, async ({ actor, guild, user, db }) => {
-      await setMemberXp(db, guild.id, user.id, xpForLevel(LOW_LEVEL));
+    test('他のサーバーのメンバーを含めない', { users: 'login' }, async ({ actor, guild, user, db }) => {
+      await expireCooldown(db, guild.id, user.id);
       const otherMember = 'other-guild-leader';
       await setMemberXp(db, OTHER_GUILD, otherMember, xpForLevel(HIGH_LEVEL));
       const reply = await actor.command('leaderboard');
@@ -124,7 +123,6 @@ describe('コマンド', () => {
         seed: {
           guilds: [{ id: OTHER_GUILD, name: 'サブサーバー' }],
           channels: [{ id: OTHER_CHANNEL, name: 'サブ', guild: OTHER_GUILD }],
-          users: [{ username: 'target', guilds: [OTHER_GUILD] }],
         },
       },
       async ({ actor, db }) => {
@@ -136,8 +134,8 @@ describe('コマンド', () => {
   });
 
   describe('/xp', () => {
-    test('管理者は XP を加算でき、複数レベル上がっても 1 回お知らせする', { users: 'login', seed: adminSeed }, async ({ bot, actor, channel, seeded }) => {
-      const { target } = usersOf(seeded);
+    test('管理者は XP を加算でき、複数レベル上がっても 1 回お知らせする', { users: ADMIN, seed: targetSeed }, async ({ bot, actor, channel, seeded }) => {
+      const target = targetOf(seeded);
       const amount = xpForLevel(HIGH_LEVEL);
       const reply = await actor.command('xp add', { user: target.id, amount });
       expect(reply.content).toBe(`${target.username} に ${amount} XP を加算しました（合計 ${amount} XP）`);
@@ -145,16 +143,16 @@ describe('コマンド', () => {
       await expect.poll(levelUps).toEqual([levelUpMessage(target.id, levelForXp(amount))]);
     });
 
-    test('管理者は XP をリセットできる', { users: 'login', seed: adminSeed }, async ({ actor, guild, seeded, db }) => {
-      const { target } = usersOf(seeded);
+    test('管理者は XP をリセットできる', { users: ADMIN, seed: targetSeed }, async ({ actor, guild, seeded, db }) => {
+      const target = targetOf(seeded);
       await setMemberXp(db, guild.id, target.id, xpForLevel(LOW_LEVEL));
       await expect(actor.command('xp reset', { user: target.id })).resolves.toMatchObject({ content: `${target.username} の XP をリセットしました` });
       await expect(memberXp(db, guild.id, target.id)).resolves.toBeUndefined();
     });
 
-    test('サーバーの管理権限がないと拒否する', { users: 'login', seed: adminSeed }, async ({ bot, guild, seeded, db }) => {
-      const { target } = usersOf(seeded);
-      const reply = await bot.as(target).command('xp add', { user: target.id, amount: xpForLevel(LOW_LEVEL) });
+    test('サーバーの管理権限がないと拒否する', { users: NON_ADMIN, seed: targetSeed }, async ({ actor, guild, seeded, db }) => {
+      const target = targetOf(seeded);
+      const reply = await actor.command('xp add', { user: target.id, amount: xpForLevel(LOW_LEVEL) });
       expect(reply.content).toBe('このコマンドを使う権限がありません');
       expect(reply.flags & EPHEMERAL).toBe(EPHEMERAL);
       await expect(memberXp(db, guild.id, target.id)).resolves.toBeUndefined();
@@ -162,16 +160,16 @@ describe('コマンド', () => {
   });
 
   describe('レベル報酬ロール', () => {
-    test('設定したレベルに達するとロールを付与する', { users: 'login', seed: adminSeed }, async ({ bot, actor, guild, seeded }) => {
-      const { target } = usersOf(seeded);
+    test('設定したレベルに達するとロールを付与する', { users: ADMIN, seed: rewardSeed }, async ({ bot, actor, guild, seeded }) => {
+      const target = targetOf(seeded);
       const { bronze } = rolesOf(seeded);
       await setLevelRole(guild.id, LOW_LEVEL, bronze);
       await actor.command('xp add', { user: target.id, amount: xpForLevel(LOW_LEVEL) });
       await expect.poll(() => hasRole(bot, guild.id, target.id, bronze)).toBe(true);
     });
 
-    test('レベルを飛び越えても途中の報酬を付与する', { users: 'login', seed: adminSeed }, async ({ bot, actor, guild, seeded }) => {
-      const { target } = usersOf(seeded);
+    test('レベルを飛び越えても途中の報酬を付与する', { users: ADMIN, seed: rewardSeed }, async ({ bot, actor, guild, seeded }) => {
+      const target = targetOf(seeded);
       const { bronze, gold } = rolesOf(seeded);
       await setLevelRole(guild.id, LOW_LEVEL, bronze);
       await setLevelRole(guild.id, HIGH_LEVEL, gold);
@@ -180,8 +178,8 @@ describe('コマンド', () => {
       await expect(hasRole(bot, guild.id, target.id, bronze)).resolves.toBe(true);
     });
 
-    test('必要なレベルに達するまで付与しない', { users: 'login', seed: adminSeed }, async ({ bot, actor, channel, guild, seeded }) => {
-      const { target } = usersOf(seeded);
+    test('必要なレベルに達するまで付与しない', { users: ADMIN, seed: rewardSeed }, async ({ bot, actor, channel, guild, seeded }) => {
+      const target = targetOf(seeded);
       const { gold } = rolesOf(seeded);
       await setLevelRole(guild.id, HIGH_LEVEL, gold);
       await actor.command('xp add', { user: target.id, amount: xpForLevel(HIGH_LEVEL - 1) });
@@ -189,8 +187,8 @@ describe('コマンド', () => {
       await expect(hasRole(bot, guild.id, target.id, gold)).resolves.toBe(false);
     });
 
-    test('/levelrole set で設定した報酬が付与される', { users: 'login', seed: adminSeed }, async ({ bot, actor, guild, seeded }) => {
-      const { target } = usersOf(seeded);
+    test('/levelrole set で設定した報酬が付与される', { users: ADMIN, seed: rewardSeed }, async ({ bot, actor, guild, seeded }) => {
+      const target = targetOf(seeded);
       const { bronze } = rolesOf(seeded);
       const reply = await actor.command('levelrole set', { level: LOW_LEVEL, role: bronze });
       expect(reply.content).toBe(`レベル ${LOW_LEVEL} の報酬を bronze に設定しました`);
@@ -198,8 +196,8 @@ describe('コマンド', () => {
       await expect.poll(() => hasRole(bot, guild.id, target.id, bronze)).toBe(true);
     });
 
-    test('/levelrole remove で解除すると付与されない', { users: 'login', seed: adminSeed }, async ({ bot, actor, channel, guild, seeded }) => {
-      const { target } = usersOf(seeded);
+    test('/levelrole remove で解除すると付与されない', { users: ADMIN, seed: rewardSeed }, async ({ bot, actor, channel, guild, seeded }) => {
+      const target = targetOf(seeded);
       const { bronze } = rolesOf(seeded);
       await setLevelRole(guild.id, LOW_LEVEL, bronze);
       await expect(actor.command('levelrole remove', { level: LOW_LEVEL })).resolves.toMatchObject({ content: `レベル ${LOW_LEVEL} の報酬を解除しました` });

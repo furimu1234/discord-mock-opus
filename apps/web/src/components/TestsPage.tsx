@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { api, type Json } from '../api';
-import { ChevronIcon } from './Icons';
+import { ChevronIcon, FolderIcon } from './Icons';
 
 const STATUS_LABELS: Record<string, string> = {
   ready: 'READY',
@@ -78,8 +78,8 @@ interface TestCardProps {
 function TestCard({ test, result, running, onRun, onOpenDb, onOpenRun }: TestCardProps) {
   const [expanded, setExpanded] = useState(false);
   const disabled = running || test.skipped;
+  const otherUsers = [test.users ?? []].flat().filter((user: string) => user !== 'login');
   const status = test.skipped ? 'skipped' : ((result?.status as string | undefined) ?? 'ready');
-  const badge = test.suite.at(-1) ?? fileLabel(test.file);
   const stop = (action: () => void) => (event: React.MouseEvent) => {
     event.stopPropagation();
     action();
@@ -91,11 +91,11 @@ function TestCard({ test, result, running, onRun, onOpenDb, onOpenRun }: TestCar
     <article className={`test-card ${status}${disabled ? ' disabled' : ''}`} data-testid="test-case" tabIndex={disabled ? -1 : 0}
       onClick={run} onKeyDown={(event) => { if (event.key === 'Enter') run(); }}>
       <div className="test-card-header">
-        <span className="test-badge">{badge}</span>
         <h3 className="test-title">{test.name}</h3>
         <span className={`status ${status}`}>{STATUS_LABELS[status]}</span>
       </div>
       <p className="test-description">{test.description ?? test.file}</p>
+      {otherUsers.length > 0 && <p className="test-user">実行ユーザー: {otherUsers.join(', ')}</p>}
       <div className="test-card-footer">
         {result?.durationMs !== undefined && <small>{result.durationMs}ms</small>}
         {result?.status === 'failed' && (
@@ -132,17 +132,18 @@ function CategorySection({ category, depth, results, running, collapsed, onToggl
   const passed = all.filter((test) => results[test.id]?.status === 'passed').length;
   const failed = all.filter((test) => results[test.id]?.status === 'failed').length;
   return (
-    <section className="test-category" data-testid="test-category" style={{ marginLeft: depth === 0 ? 0 : 12 }}>
+    <section className={depth === 0 ? 'test-category' : 'test-category nested'} data-testid="test-category">
       <header className="test-category-header">
         <button className="category-toggle" aria-expanded={open} onClick={() => onToggle(category.key)}>
           <span className={open ? 'category-chevron' : 'category-chevron closed'}><ChevronIcon /></span>
+          <span className="category-icon"><FolderIcon /></span>
           <span className="category-name">{category.name}</span>
           <span className="category-count">{all.length}</span>
           {passed > 0 && <span className="count passed">{passed}</span>}
           {failed > 0 && <span className="count failed">{failed}</span>}
         </button>
         <button className="card-button" aria-label={`${category.name} を実行`} disabled={running || runnable.length === 0}
-          onClick={() => onRun(runnable)}>▶</button>
+          onClick={() => onRun(runnable)}>▶ 実行</button>
       </header>
       {open && (
         <>

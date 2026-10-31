@@ -1,21 +1,41 @@
 import type { Actor, PrepareOptions, TestClient, TestSeed } from '@dismock/client';
 import { db } from '@dismock/client';
+import type { DEFAULT_USERS } from '@dismock/server/constants';
 
 export { expect } from './expect.js';
 export type { PollOptions } from './expect.js';
 export { fn, spyOn } from 'jest-mock';
 
+/**
+ * 管理画面で追加したダミーユーザー（ユーザー名と ID）。
+ * `pnpm test` / `pnpm app` の起動中に生成される `dismock-users.d.ts` が内容を追加する。
+ */
+export interface DummyUsers {}
+
+type DefaultUser = (typeof DEFAULT_USERS)[number];
+
+/** テストの `users` に指定できるダミーユーザーの ID またはユーザー名。 */
+export type DummyUser = DefaultUser['id'] | DefaultUser['username'] | keyof DummyUsers | DummyUsers[keyof DummyUsers];
+
+/** `'login'` はログイン中のユーザー。 */
+export type TestUser = 'login' | DummyUser;
+
 export interface TestContext {
   bot: TestClient;
+  /** テストを実行するユーザー。リストを指定したときは先頭のユーザー。 */
   user: Record<string, any>;
   actor: Actor;
+  /** `users` に指定したすべてのユーザーの `Actor`。 */
+  actors: Actor[];
   guild: Record<string, any>;
   channel: Record<string, any>;
   seeded: Record<string, any>;
   db: typeof db;
 }
 
-export interface TestOptions extends PrepareOptions {
+export interface TestOptions extends Omit<PrepareOptions, 'users' | 'label' | 'channelId'> {
+  /** テストを実行するユーザー。省略するとログイン中のユーザー。 */
+  users?: TestUser | TestUser[];
   /** テストの制限時間。既定は 5000ms。 */
   timeout?: number;
   /** テストケースのカードに表示する説明。 */

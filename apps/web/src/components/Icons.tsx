@@ -56,6 +56,12 @@ export const DatabaseIcon = () => (
   </Icon>
 );
 
+export const FolderIcon = () => (
+  <Icon size={16}>
+    <path d="M3 6a2 2 0 0 1 2-2h4.600l2 2.500H19a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z" />
+  </Icon>
+);
+
 export const ListIcon = () => (
   <Icon size={24}>
     <path d="M4 5h3v3H4V5Zm5 .5h11v2H9v-2ZM4 10.500h3v3H4v-3Zm5 .5h11v2H9v-2ZM4 16h3v3H4v-3Zm5 .5h11v2H9v-2Z" />

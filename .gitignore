@@ -154,3 +154,6 @@ vite.config.ts.timestamp-*
 
 # Mock server state
 data/
+
+# Generated dummy user types
+dismock-users.d.ts

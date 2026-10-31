@@ -203,6 +203,7 @@ function collect(file: string, suite: Suite, path: string[] = []): object[] {
     suite: name,
     name: test.name,
     description: test.options.description,
+    users: test.options.users,
     skipped: !test.fn || test.mode === 'skip' || ancestors(suite).some((s) => s.mode === 'skip'),
   }));
   return [...tests, ...suite.suites.flatMap((child) => collect(file, child, name))];

@@ -1,10 +1,13 @@
 import type { ChildProcess } from 'node:child_process';
-import { basename, resolve } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
 import { connection, StartupError } from '@dismock/client';
 import { EXIT_STARTUP_FAILURE, MARK_LIST, MARK_READY } from './constants.js';
 import { findSetup, findTests, spawnRunner } from './spawn.js';
 
 const RECONNECT_INTERVAL_MS = 500;
+const USER_TYPES_DEBOUNCE_MS = 500;
+const USER_TYPES_FILE = 'dismock-users.d.ts';
 
 interface Project {
   name: string;
@@ -25,6 +28,43 @@ function post(path: string, body: unknown = {}): Promise<Response> {
     headers: { 'content-type': 'application/json', authorization: `Bot ${token}` },
     body: JSON.stringify(body),
   });
+}
+
+interface MockUser {
+  id: string;
+  username: string;
+  temporary?: boolean;
+}
+
+function renderUserTypes(users: MockUser[]): string {
+  const lines = users.map((user) => `    ${JSON.stringify(user.username)}: ${JSON.stringify(user.id)};`);
+  return [
+    '// dismock が自動で生成します。編集しないでください。',
+    "import '@dismock/test';",
+    '',
+    "declare module '@dismock/test' {",
+    '  interface DummyUsers {',
+    ...lines,
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+}
+
+/** ダミーユーザーを型定義に書き出す。テストの `users` で補完が効くようにする。 */
+async function writeUserTypes(): Promise<void> {
+  const { url, token } = connection();
+  const response = await fetch(`${url}/api/mock/state`, { headers: { authorization: `Bot ${token}` } });
+  const state = (await response.json()) as { botUserId: string; users: Record<string, MockUser> };
+  const users = Object.values(state.users)
+    .filter((user) => user.id !== state.botUserId && !user.temporary)
+    .sort((a, b) => a.username.localeCompare(b.username));
+  const content = renderUserTypes(users);
+  for (const project of projects) {
+    const testDir = join(project.dir, '__tests__');
+    const file = join(existsSync(testDir) ? testDir : project.dir, USER_TYPES_FILE);
+    if (!existsSync(file) || readFileSync(file, 'utf8') !== content) writeFileSync(file, content);
+  }
 }
 
 function exited(child: ChildProcess): Promise<number> {
@@ -154,7 +194,13 @@ export async function runAgent(dirs: string[]): Promise<void> {
   const enqueue = (task: () => Promise<void>) => {
     queue = queue.then(task).catch((error: Error) => console.error(error.message));
   };
+  let userTypesTimer: NodeJS.Timeout | undefined;
+  const refreshUserTypes = () => {
+    clearTimeout(userTypesTimer);
+    userTypesTimer = setTimeout(() => void writeUserTypes().catch(() => {}), USER_TYPES_DEBOUNCE_MS);
+  };
   const onEvent = (event: AgentEvent) => {
+    if (event.type === 'STATE_SYNC') refreshUserTypes();
     const project = find(event.data.project);
     if (event.type === 'TEST_RUN' && project) enqueue(() => runTests(project, event.data.ids ?? [], event.data.channelId));
     if (event.type === 'BOT_SELECT' && project) enqueue(() => switchBot(project).then(() => registerAll(projects)));
@@ -167,6 +213,7 @@ export async function runAgent(dirs: string[]): Promise<void> {
     try {
       await startBot(active);
       await registerAll(projects);
+      await writeUserTypes();
     } catch (error) {
       console.error(`起動エラー: ${(error as Error).message}`);
       process.exit(EXIT_STARTUP_FAILURE);

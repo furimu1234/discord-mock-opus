@@ -12,6 +12,8 @@ export interface TestCaseInfo {
   suite: string[];
   name: string;
   description?: string;
+  /** テストを実行するユーザーの指定。省略するとログイン中のユーザー。 */
+  users?: string | string[];
   skipped: boolean;
 }
 

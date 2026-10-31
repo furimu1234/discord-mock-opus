@@ -94,12 +94,12 @@ describe('初期データ', () => {
     users: [{ username: 'owner', roles: ['admin'] }, { username: 'guest', roles: ['member'] }],
   };
 
-  test('テストコードから投入したデータを Bot が参照できる', { users: 'login', seed }, async ({ bot, actor, user, seeded }) => {
-    expect(user.username).toBe('owner');
+  test('テストコードから投入したデータを Bot が参照できる', { users: 'login', seed }, async ({ bot, seeded }) => {
+    const owner = bot.as(seeded.users[0]);
     const admin = seeded.roles.find((role: { name: string }) => role.name === 'admin');
     const member = seeded.roles.find((role: { name: string }) => role.name === 'member');
-    await expect(actor.command('hasrole', { role: admin })).resolves.toMatchObject({ content: 'Yes' });
-    await expect(actor.command('hasrole', { role: member })).resolves.toMatchObject({ content: 'No' });
+    await expect(owner.command('hasrole', { role: admin })).resolves.toMatchObject({ content: 'Yes' });
+    await expect(owner.command('hasrole', { role: member })).resolves.toMatchObject({ content: 'No' });
 
     const guild = bot.client.guilds.cache.get(seeded.guilds[0].id) as { name: string; channels: { cache: Map<string, unknown> } };
     expect(guild.name).toBe('Seed Guild');
@@ -109,29 +109,29 @@ describe('初期データ', () => {
 });
 
 describe('DM', () => {
-  const sender = { users: [{ username: 'sender' }] };
   let target: Record<string, any>;
 
   beforeEach(async ({ bot }) => {
     target = await bot.users.create({ username: 'receiver' });
   });
 
-  test('宛先のユーザーでログインすると読める', { users: 'login', seed: sender }, async ({ bot, actor }) => {
+  test('宛先のユーザーでログインすると読める', { users: 'login' }, async ({ bot, actor }) => {
+    const ownDms = (await actor.dms()).length;
     const reply = await actor.command('dm', { target });
     expect(reply.flags & 64).toBe(64);
 
     const dms = await bot.as(target).dms();
     expect(dms.map((message) => message.content)).toEqual(['Secret message']);
-    await expect(actor.dms()).resolves.toEqual([]);
+    await expect(actor.dms()).resolves.toHaveLength(ownDms);
   });
 
-  test('state に DM の内容は含まれない', { users: 'login', seed: sender }, async ({ bot, actor }) => {
+  test('state に DM の内容は含まれない', { users: 'login' }, async ({ bot, actor }) => {
     await actor.command('dm', { target });
     const state = await bot.state();
     expect(JSON.stringify(state.messages)).not.toContain('Secret message');
   });
 
-  test('別のユーザーでログイン中は DM チャンネルを読めない', { users: 'login', seed: sender }, async ({ bot, actor }) => {
+  test('別のユーザーでログイン中は DM チャンネルを読めない', { users: 'login' }, async ({ bot, actor }) => {
     await actor.command('dm', { target });
     await actor.login();
     const state = await bot.state();

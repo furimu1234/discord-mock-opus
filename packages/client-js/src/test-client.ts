@@ -48,7 +48,11 @@ export interface TestClientOptions {
 }
 
 export interface PrepareOptions {
-  users?: 'login';
+  /**
+   * テストを実行するユーザー。`'login'` はログイン中のユーザーで、ID かユーザー名、そのリストも指定できる。
+   * 省略すると `'login'` として扱う。
+   */
+  users?: string | string[];
   seed?: TestSeed;
   /** チャンネルに表示するテストの区切りの名前。 */
   label?: string;
@@ -57,15 +61,18 @@ export interface PrepareOptions {
 }
 
 export interface Prepared {
-  user?: Json;
-  actor?: Actor;
-  guild?: Json;
-  channel?: Json;
+  user: Json;
+  actor: Actor;
+  /** `users` にリストを指定したときの、すべてのユーザーの `Actor`。 */
+  actors: Actor[];
+  guild: Json;
+  channel: Json;
   seeded: Json;
 }
 
 const READY_TIMEOUT_MS = 5000;
 const TEXT_CHANNEL = 0;
+const LOGIN_USER = 'login';
 
 function isOptions(value: unknown): value is TestClientOptions {
   return typeof (value as BotClient | undefined)?.login !== 'function';
@@ -167,7 +174,8 @@ export class TestClient {
 
   /** ダミーデータと DB を初期データとして投入する。 */
   async seed(input: TestSeed): Promise<Json> {
-    const { db: dbSeed, ...discord } = input;
+    const { db: dbSeed, ...rest } = input;
+    const discord = { ...rest, users: rest.users?.map((user) => ({ temporary: true, ...user })) };
     if (dbSeed?.pg) await db.pg().seed(dbSeed.pg);
     if (dbSeed?.mysql) db.mysql().seed(dbSeed.mysql);
     if (dbSeed?.sqlite) db.sqlite().seed(dbSeed.sqlite);
@@ -177,33 +185,51 @@ export class TestClient {
 
   /**
    * テストの準備をする。状態は初期化せず、今のデータの上でテストを実行する。
-   * 操作するユーザーとチャンネルは、初期データの指定がなければ、ログイン中のユーザーと最初のテキストチャンネルを使う。
+   * 操作するユーザーは `users` の指定がなければログイン中のユーザーで、`seed` で追加したユーザーは操作に使わない。
+   * チャンネルは `seed` の指定がなければ、画面で開いているチャンネルを使う。
    */
   async prepare(options: PrepareOptions = {}): Promise<Prepared> {
     const api = await this.mock();
-    await this.start(options);
+    await this.start();
     const target = options.channelId ? (await api.state()).channels[options.channelId] : undefined;
     this.defaultGuildId = target?.guild_id;
     const seeded = await this.seed(this.merge(this.options.seed, options.seed));
-    if (options.users !== 'login') return { seeded };
 
-    const user = await this.pickUser(api, seeded);
+    const users = await this.resolveUsers(api, options.users);
     const channel = await this.pickChannel(api, seeded, target);
     const guildId = channel.guild_id as string;
     const state = await api.state();
-    if (!state.guilds[guildId].members[user.id]) await api.join(guildId, user.id);
+    for (const user of users) {
+      if (!state.guilds[guildId].members[user.id]) await api.join(guildId, user.id);
+    }
+    const user = users[0]!;
     await api.switchUser(user.id);
     if (options.label) await api.mark(channel.id, options.label);
     this.defaultChannelId = channel.id;
-    return { user, actor: this.as(user), guild: (await api.state()).guilds[guildId], channel, seeded };
+    return {
+      user,
+      actor: this.as(user),
+      actors: users.map((item) => this.as(item)),
+      guild: (await api.state()).guilds[guildId],
+      channel,
+      seeded,
+    };
   }
 
-  private async pickUser(api: MockApi, seeded: Json): Promise<Json> {
+  /** `users` の指定をユーザーに変換する。ID とユーザー名のどちらでも指定できる。 */
+  private async resolveUsers(api: MockApi, users: PrepareOptions['users'] = LOGIN_USER): Promise<Json[]> {
     const state = await api.state();
-    return (
-      (seeded.users[0] as Json | undefined) ??
-      (state.users[state.activeUserId] as Json | undefined) ??
-      (await this.seed({ users: [{ username: 'test-user' }] })).users[0]
+    const all = Object.values<Json>(state.users);
+    return Promise.all(
+      [users].flat().map(async (ref) => {
+        if (ref === LOGIN_USER) {
+          const loggedIn = state.users[this.loggedInUserId ?? state.activeUserId] as Json | undefined;
+          return loggedIn ?? (await this.seed({ users: [{ username: 'test-user' }] })).users[0];
+        }
+        const found = all.find((user) => user.id === ref || user.username === ref);
+        if (!found) throw new Error(`dismock: ダミーユーザーが見つかりません: ${ref}`);
+        return found;
+      }),
     );
   }
 
@@ -220,9 +246,9 @@ export class TestClient {
   }
 
   /** Bot のログインと DB の準備に失敗すると、どのテストも実行できない。 */
-  private async start(options: PrepareOptions): Promise<void> {
+  private async start(): Promise<void> {
     try {
-      if (options.users === 'login' && !this.bot?.isReady()) await this.login();
+      if (!this.bot?.isReady()) await this.login();
       if (!this.dbReady) {
         this.dbReady = true;
         await this.options.setupDb?.();
@@ -255,7 +281,7 @@ export class TestClient {
   /** テストを実行せず Bot を起動したままにする。画面からの手動操作に使う。 */
   async serve(): Promise<void> {
     await this.mock();
-    await this.start({ users: 'login' });
+    await this.start();
   }
 
   /** 指定したユーザーとして操作する `Actor` を返す。 */
