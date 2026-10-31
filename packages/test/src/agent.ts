@@ -4,6 +4,8 @@ import { connection, StartupError } from '@dismock/client';
 import { EXIT_STARTUP_FAILURE, MARK_LIST, MARK_READY } from './constants.js';
 import { findSetup, findTests, spawnRunner } from './spawn.js';
 
+const RECONNECT_INTERVAL_MS = 500;
+
 interface Project {
   name: string;
   dir: string;
@@ -15,7 +17,6 @@ interface AgentEvent {
 }
 
 let bot: { project: string; child: ChildProcess } | undefined;
-let testRun: ChildProcess | undefined;
 
 function post(path: string, body: unknown = {}): Promise<Response> {
   const { url, token } = connection();
@@ -93,14 +94,18 @@ async function switchBot(project: Project): Promise<void> {
   await startBot(project).catch((error: Error) => console.error(error.message));
 }
 
+/** Bot のプロセスの中でテストを実行する。DB を引き継ぐため、そのプロジェクトの Bot に接続する。 */
 async function runTests(project: Project, ids: string[]): Promise<void> {
-  // テストの後は、実行したプロジェクトではなく選択中の Bot に戻す。
-  const selected = projects.find((p) => p.name === bot?.project) ?? project;
-  await stopBot();
-  testRun = spawnRunner(project.dir, { ...config(project), ids, project: project.name }, 'inherit');
-  await exited(testRun);
-  testRun = undefined;
-  await switchBot(selected);
+  if (bot?.project !== project.name) await switchBot(project);
+  const child = bot?.child;
+  if (child) {
+    await new Promise<void>((done) => {
+      child.once('message', () => done());
+      child.once('exit', () => done());
+      child.send({ ids, files: findTests(project.dir) });
+    });
+  }
+  if (!bot) await switchBot(project);
   await post('/tests/finish', { activeBot: bot?.project ?? null });
   await registerAll(projects);
 }
@@ -123,39 +128,54 @@ async function subscribe(onEvent: (event: AgentEvent) => void): Promise<void> {
 
 let projects: Project[] = [];
 
+/** Mock が再び起動するまで待つ。 */
+async function waitForMock(): Promise<void> {
+  const { url } = connection();
+  for (;;) {
+    const response = await fetch(`${url}/api/v10/gateway`).catch(() => undefined);
+    if (response?.ok) return;
+    await new Promise((done) => setTimeout(done, RECONNECT_INTERVAL_MS));
+  }
+}
+
 /** 画面からの指示を待ち、テストの実行と Bot の起動を行う。 */
 export async function runAgent(dirs: string[]): Promise<void> {
   // エージェントが終了するときは、Bot とテストのプロセスを残さない。
   process.once('exit', () => {
     bot?.child.kill();
-    testRun?.kill();
   });
   for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => process.exit(0));
 
   projects = dirs.map((dir) => ({ name: basename(resolve(dir)), dir: resolve(dir) }));
   const find = (name?: string) => projects.find((project) => project.name === name);
-  try {
-    await startBot(projects[0]!);
-    await registerAll(projects);
-  } catch (error) {
-    console.error(`起動エラー: ${(error as Error).message}`);
-    process.exit(EXIT_STARTUP_FAILURE);
-  }
-  console.log(`testClient: ${projects.map((project) => project.name).join(', ')}`);
 
   // 実行とBotの切り替えが重ならないよう、指示は順番に処理する。
   let queue = Promise.resolve();
   const enqueue = (task: () => Promise<void>) => {
     queue = queue.then(task).catch((error: Error) => console.error(error.message));
   };
-  const events = subscribe((event) => {
+  const onEvent = (event: AgentEvent) => {
     const project = find(event.data.project);
     if (event.type === 'TEST_RUN' && project) enqueue(() => runTests(project, event.data.ids ?? []));
     if (event.type === 'BOT_SELECT' && project) enqueue(() => switchBot(project).then(() => registerAll(projects)));
     if (event.type === 'TEST_RELOAD') enqueue(() => registerAll(projects));
-  });
-  await events.catch(() => {});
-  console.error('Mock との接続が切れました');
-  await stopBot();
-  process.exit(1);
+  };
+
+  // Mock が再起動すると、Bot も起動し直して DB を空にする。
+  let active = projects[0]!;
+  for (;;) {
+    try {
+      await startBot(active);
+      await registerAll(projects);
+    } catch (error) {
+      console.error(`起動エラー: ${(error as Error).message}`);
+      process.exit(EXIT_STARTUP_FAILURE);
+    }
+    console.log(`testClient: ${projects.map((project) => project.name).join(', ')}`);
+    await subscribe(onEvent).catch(() => {});
+    active = find(bot?.project) ?? active;
+    await stopBot();
+    console.error('Mock との接続が切れました。再接続を待っています');
+    await waitForMock();
+  }
 }

@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import type { Json, SeedChannel, SeedGuild, SeedInput, SeedRole, SeedUser } from '@dismock/server';
 import { Actor } from './actor.js';
 import { connection, StartupError, verifyConnection } from './connection.js';
-import { db, resetEngines } from './db/index.js';
+import { db } from './db/index.js';
 import type { SheetSeed } from './db/sheets.js';
 import type { SeedData } from './db/types.js';
 import { MockApi } from './mock-api.js';
@@ -50,7 +50,7 @@ export interface TestClientOptions {
 export interface PrepareOptions {
   users?: 'login';
   seed?: TestSeed;
-  /** 画面に残すメッセージの区切りに表示するテスト名。 */
+  /** チャンネルに表示するテストの区切りの名前。 */
   label?: string;
 }
 
@@ -63,6 +63,7 @@ export interface Prepared {
 }
 
 const READY_TIMEOUT_MS = 5000;
+const TEXT_CHANNEL = 0;
 
 function isOptions(value: unknown): value is TestClientOptions {
   return typeof (value as BotClient | undefined)?.login !== 'function';
@@ -75,7 +76,7 @@ export class TestClient {
   private dbReady = false;
   private verified?: Promise<void>;
   private defaultChannelId?: string;
-  private defaultGuildId?: string;
+  private loggedInUserId?: string | null;
 
   readonly db = db;
 
@@ -168,40 +169,48 @@ export class TestClient {
     if (dbSeed?.mysql) db.mysql().seed(dbSeed.mysql);
     if (dbSeed?.sqlite) db.sqlite().seed(dbSeed.sqlite);
     if (dbSeed?.sheets) db.sheets().seed(dbSeed.sheets);
-    const seeded = await (await this.mock()).seed(discord);
-    this.defaultGuildId ??= seeded.guilds[0]?.id;
-    this.defaultChannelId ??= seeded.channels.find((c: Json) => c.type === 0)?.id;
-    return seeded;
+    return (await this.mock()).seed(discord);
   }
 
-  /** テストの開始前に状態を初期化する。 */
+  /**
+   * テストの準備をする。状態は初期化せず、今のデータの上でテストを実行する。
+   * 操作するユーザーとチャンネルは、初期データの指定がなければ、ログイン中のユーザーと最初のテキストチャンネルを使う。
+   */
   async prepare(options: PrepareOptions = {}): Promise<Prepared> {
     const api = await this.mock();
-    await api.reset(options.label);
-    this.clearCaches();
-    this.defaultChannelId = undefined;
-    this.defaultGuildId = undefined;
-    await resetEngines();
     await this.start(options);
+    const seeded = await this.seed(this.merge(this.options.seed, options.seed));
+    if (options.users !== 'login') return { seeded };
 
-    const seed = this.merge(this.options.seed, options.seed);
-    if (options.users !== 'login') return { seeded: await this.seed(seed) };
-
-    const seeded = await this.seed({
-      ...seed,
-      channels: seed.channels?.length ? seed.channels : [{ name: 'general' }],
-      users: seed.users?.length ? seed.users : [{ username: 'test-user' }],
-    });
-    const user = seeded.users[0] as Json;
-    await api.switchUser(user.id);
+    const user = await this.pickUser(api, seeded);
+    const channel = await this.pickChannel(api, seeded);
+    const guildId = channel.guild_id as string;
     const state = await api.state();
-    return {
-      user,
-      actor: this.as(user),
-      guild: state.guilds[this.defaultGuildId!],
-      channel: state.channels[this.defaultChannelId!],
-      seeded,
-    };
+    if (!state.guilds[guildId].members[user.id]) await api.join(guildId, user.id);
+    await api.switchUser(user.id);
+    if (options.label) await api.mark(channel.id, options.label);
+    this.defaultChannelId = channel.id;
+    return { user, actor: this.as(user), guild: (await api.state()).guilds[guildId], channel, seeded };
+  }
+
+  private async pickUser(api: MockApi, seeded: Json): Promise<Json> {
+    const state = await api.state();
+    return (
+      (seeded.users[0] as Json | undefined) ??
+      (state.users[state.activeUserId] as Json | undefined) ??
+      (await this.seed({ users: [{ username: 'test-user' }] })).users[0]
+    );
+  }
+
+  private async pickChannel(api: MockApi, seeded: Json): Promise<Json> {
+    const seededChannel = seeded.channels.find((channel: Json) => channel.type === TEXT_CHANNEL) as Json | undefined;
+    if (seededChannel) return seededChannel;
+    const state = await api.state();
+    const guild = (seeded.guilds[0] ?? Object.values<Json>(state.guilds)[0]) as Json | undefined;
+    const channels = Object.values<Json>(state.channels)
+      .filter((channel) => channel.guild_id === guild?.id && channel.type === TEXT_CHANNEL)
+      .sort((a, b) => a.position - b.position);
+    return channels[0] ?? (await this.seed({ channels: [{ name: 'general', guild: guild?.id }] })).channels[0];
   }
 
   /** Bot のログインと DB の準備に失敗すると、どのテストも実行できない。 */
@@ -228,29 +237,19 @@ export class TestClient {
     };
   }
 
-  /** テストの実行前後で、JSON に保存されたダミーデータを保護する。 */
+  /** テストの前後で、画面でログインしているユーザーを維持する。 */
   async beginTestSession(): Promise<void> {
-    await (await this.mock()).beginTestSession();
+    this.loggedInUserId = (await (await this.mock()).state()).activeUserId;
   }
 
   async endTestSession(): Promise<void> {
-    await (await this.mock()).endTestSession();
+    if (this.loggedInUserId) await (await this.mock()).switchUser(this.loggedInUserId);
   }
 
   /** テストを実行せず Bot を起動したままにする。画面からの手動操作に使う。 */
   async serve(): Promise<void> {
     await this.mock();
     await this.start({ users: 'login' });
-  }
-
-  /** Bot の持つキャッシュと Mock の状態を揃える。 */
-  private clearCaches(): void {
-    if (!this.bot?.isReady()) return;
-    this.bot.guilds.cache.clear();
-    this.bot.channels.cache.clear();
-    for (const id of this.bot.users.cache.keys()) {
-      if (id !== this.bot.user?.id) this.bot.users.cache.delete(id);
-    }
   }
 
   /** 指定したユーザーとして操作する `Actor` を返す。 */

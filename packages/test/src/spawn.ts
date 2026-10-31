@@ -47,7 +47,7 @@ export function spawnRunner(cwd: string, config: RunnerConfig, stdout: 'inherit'
     ],
     {
       cwd,
-      stdio: ['ignore', stdout, 'inherit'],
+      stdio: config.mode === 'bot' ? ['ignore', stdout, 'inherit', 'ipc'] : ['ignore', stdout, 'inherit'],
       env: { ...process.env, DISMOCK_TEST_CONFIG: JSON.stringify(config) },
     },
   );

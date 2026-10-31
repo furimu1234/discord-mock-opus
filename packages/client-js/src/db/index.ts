@@ -53,10 +53,6 @@ export async function snapshotEngines(): Promise<DbSnapshot> {
   return snapshot;
 }
 
-export async function resetEngines(): Promise<void> {
-  for (const found of runtime.engines.values()) await found.reset();
-}
-
 export async function closeEngines(): Promise<void> {
   for (const found of runtime.engines.values()) await found.close();
   runtime.engines.clear();

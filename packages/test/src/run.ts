@@ -27,19 +27,21 @@ interface Totals {
   failures: { title: string; error: unknown }[];
 }
 
-const totals: Totals = { passed: 0, failed: 0, skipped: 0, failures: [] };
+const emptyTotals = (): Totals => ({ passed: 0, failed: 0, skipped: 0, failures: [] });
+
+let totals = emptyTotals();
 
 let failCurrentTest: ((error: unknown) => void) | undefined;
 
-/** Bot 内の未処理のエラーでランナーを止めず、実行中のテストの失敗として記録する。 */
 function abortStartup(error: unknown): never {
   console.error(`起動エラー: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(EXIT_STARTUP_FAILURE);
 }
 
+/** Bot 内の未処理のエラーでランナーを止めず、実行中のテストの失敗として記録する。 */
 function reportBotError(error: unknown): void {
-  if (config.mode === 'bot') console.error(error);
-  else if (failCurrentTest) failCurrentTest(error);
+  if (failCurrentTest) failCurrentTest(error);
+  else if (config.mode === 'bot') console.error(error);
   else {
     totals.failed += 1;
     totals.failures.push({ title: 'テストの実行外で発生したエラー', error });
@@ -97,7 +99,7 @@ function report(id: string, result: TestReport): Promise<unknown> {
   return post('/tests/report', { project: config.project, id, result });
 }
 
-/** テストの結果に、終了時の DB の内容を添えて報告する。次のテストの前に DB は空になる。 */
+/** テストの結果に、終了時の DB の内容を添えて報告する。 */
 async function reportFinished(id: string, result: TestReport): Promise<unknown> {
   if (!config.project) return;
   return post('/tests/report', { project: config.project, id, result, db: await snapshotEngines() });
@@ -203,35 +205,31 @@ function collect(file: string, suite: Suite, path: string[] = []): object[] {
   return [...tests, ...suite.suites.flatMap((child) => collect(file, child, name))];
 }
 
-async function main(): Promise<number> {
-  process.on('uncaughtException', reportBotError);
-  process.on('unhandledRejection', reportBotError);
-  const filter = config.filter ? new RegExp(config.filter) : undefined;
-  if (config.setup) await import(pathToFileURL(resolve(config.setup)).href);
-  const testClient = runtime.testClient as TestClient | undefined;
-  await testClient?.connect();
+interface LoadedFile {
+  file: string;
+  root: Suite;
+}
 
-  if (config.mode === 'bot') {
-    if (!testClient) throw new StartupError('testClient.ts が見つかりません');
-    await testClient.serve();
-    publishLiveDb();
-    console.log(MARK_READY);
-    return new Promise<number>(() => {});
-  }
+let loadCount = 0;
 
-  const files: { file: string; root: Suite }[] = [];
+/** テストファイルを読み込む。Bot のプロセスでは、変更を反映するため毎回読み直す。 */
+async function loadTests(): Promise<LoadedFile[]> {
+  loadCount += 1;
+  const files: LoadedFile[] = [];
   for (const file of config.files) {
     const root = createSuite(file);
     setCurrentSuite(root);
-    await import(pathToFileURL(resolve(file)).href);
+    await import(`${pathToFileURL(resolve(file)).href}?load=${loadCount}`);
     files.push({ file, root });
   }
+  return files;
+}
 
-  if (config.mode === 'list') {
-    console.log(`${MARK_LIST}${JSON.stringify(files.flatMap(({ file, root }) => collect(file, root)))}`);
-    return 0;
-  }
-
+async function runTests(): Promise<void> {
+  totals = emptyTotals();
+  const testClient = runtime.testClient as TestClient | undefined;
+  const filter = config.filter ? new RegExp(config.filter) : undefined;
+  const files = await loadTests();
   const onlyActive = files.some(({ root }) => hasOnly(root));
   await testClient?.beginTestSession();
   for (const { file, root } of files) {
@@ -239,12 +237,45 @@ async function main(): Promise<number> {
     console.log(file);
     await runSuite(file, root, onlyActive, filter);
   }
-
   await testClient?.endTestSession();
-  await testClient?.destroy();
-  await closeEngines();
   printFailures();
   console.log(`\nTests: ${totals.failed} failed, ${totals.passed} passed, ${totals.skipped} skipped`);
+}
+
+/** Bot を起動したまま、エージェントの指示でテストを実行する。DB はプロセスが動いている間は残る。 */
+async function serveBot(testClient: TestClient | undefined): Promise<number> {
+  if (!testClient) throw new StartupError('testClient.ts が見つかりません');
+  await testClient.serve();
+  publishLiveDb();
+  process.on('message', (message: { ids: string[]; files: string[] }) => {
+    config.ids = message.ids;
+    config.files = message.files;
+    void runTests()
+      .catch((error: unknown) => console.error(error))
+      .finally(() => process.send?.({ done: true }));
+  });
+  console.log(MARK_READY);
+  return new Promise<number>(() => {});
+}
+
+async function main(): Promise<number> {
+  process.on('uncaughtException', reportBotError);
+  process.on('unhandledRejection', reportBotError);
+  if (config.setup) await import(pathToFileURL(resolve(config.setup)).href);
+  const testClient = runtime.testClient as TestClient | undefined;
+  await testClient?.connect();
+
+  if (config.mode === 'bot') return serveBot(testClient);
+
+  if (config.mode === 'list') {
+    const files = await loadTests();
+    console.log(`${MARK_LIST}${JSON.stringify(files.flatMap(({ file, root }) => collect(file, root)))}`);
+    return 0;
+  }
+
+  await runTests();
+  await testClient?.destroy();
+  await closeEngines();
   return totals.failed > 0 ? 1 : 0;
 }
 

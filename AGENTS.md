@@ -31,7 +31,7 @@ pnpm test:run    # 起動中の Mock に対して全テストを実行して終�
 pnpm typecheck   # 型チェック
 ```
 
-`pnpm web` と `pnpm app` は、ブラウザで開く URL をターミナルに表示します。起動のたびにトークン以外のデータは消去されます。`pnpm test` と `pnpm test:run` には起動中の Mock が必要です。`pnpm test:run` は testClient と Bot が重ならないよう、`pnpm web` だけを起動した状態で実行してください。
+`pnpm web` と `pnpm app` は、ブラウザで開く URL をターミナルに表示します。起動のたびにトークン以外のデータは消去されます。`pnpm test` と `pnpm test:run` には起動中の Mock が必要です。`pnpm test:run` は testClient と Bot が重ならないよう、`pnpm web` だけを起動した状態で実行してください。テストごとの初期化はないので、テストはデータが空であることを前提にしないでください。
 
 トークンは `data/discord-mock-state.json` に保存され、画面の URL にも含まれます。`data/` はコミットせず、URL も共有しないでください。
 

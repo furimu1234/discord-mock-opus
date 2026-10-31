@@ -37,12 +37,12 @@ describe('スラッシュコマンド', () => {
     expect(reply.interaction_metadata.name).toBe('ping');
   });
 
-  test('実行者はログイン中のダミーユーザーになる', { users: 'login' }, async ({ bot, actor, channel }) => {
-    await expect(actor.command('whoami')).resolves.toMatchObject({ content: 'You are test-user' });
+  test('実行者はログイン中のダミーユーザーになる', { users: 'login' }, async ({ bot, actor, user, channel }) => {
+    await expect(actor.command('whoami')).resolves.toMatchObject({ content: `You are ${user.username}` });
 
-    const other = await bot.users.create({ username: 'alice' });
+    const other = await bot.users.create({ username: 'other-user' });
     const reply = await bot.as(other).command('whoami', {}, { channelId: channel.id });
-    expect(reply.content).toBe('You are alice');
+    expect(reply.content).toBe(`You are ${other.username}`);
   });
 
   test('deferReply の後の編集を受け取る', { users: 'login' }, async ({ actor }) => {
@@ -60,20 +60,21 @@ describe('スラッシュコマンド', () => {
 });
 
 describe('メッセージ', () => {
-  test('ダミーユーザーの発言に Bot が返信する', { users: 'login' }, async ({ bot, actor, channel }) => {
+  test('ダミーユーザーの発言に Bot が返信する', { users: 'login' }, async ({ bot, actor, user, channel }) => {
+    const before = (await bot.botMessages(channel.id)).length;
     await actor.sendMessage('!hello');
-    await expect.poll(() => bot.botMessages(channel.id)).toHaveLength(1);
-    const [reply] = await bot.botMessages(channel.id);
-    expect(reply!.content).toBe('Hello, test-user!');
+    await expect.poll(() => bot.botMessages(channel.id)).toHaveLength(before + 1);
+    const reply = (await bot.botMessages(channel.id)).at(-1);
+    expect(reply!.content).toBe(`Hello, ${user.username}!`);
     expect(reply!.type).toBe(19);
   });
 });
 
 describe('ボタン', () => {
-  test('押下者はログイン中のダミーユーザーになる', { users: 'login' }, async ({ actor }) => {
+  test('押下者はログイン中のダミーユーザーになる', { users: 'login' }, async ({ actor, user }) => {
     const message = await actor.command('confirm');
     const result = await actor.click(message, 'confirm');
-    expect(result.message!.content).toBe('Confirmed by test-user');
+    expect(result.message!.content).toBe(`Confirmed by ${user.username}`);
     expect(result.message!.components).toEqual([]);
   });
 });
@@ -98,20 +99,17 @@ describe('初期データ', () => {
     expect(guild.channels.cache.size).toBe(2);
   });
 
-  test('前のテストのデータは残らない', { users: 'login' }, async ({ bot }) => {
-    const state = await bot.state();
-    expect(Object.values(state.users).map((user: any) => user.username)).not.toContain('owner');
-  });
 });
 
 describe('DM', () => {
+  const sender = { users: [{ username: 'sender' }] };
   let target: Record<string, any>;
 
   beforeEach(async ({ bot }) => {
     target = await bot.users.create({ username: 'receiver' });
   });
 
-  test('宛先のユーザーでログインすると読める', { users: 'login' }, async ({ bot, actor }) => {
+  test('宛先のユーザーでログインすると読める', { users: 'login', seed: sender }, async ({ bot, actor }) => {
     const reply = await actor.command('dm', { target });
     expect(reply.flags & 64).toBe(64);
 
@@ -120,17 +118,17 @@ describe('DM', () => {
     await expect(actor.dms()).resolves.toEqual([]);
   });
 
-  test('state に DM の内容は含まれない', { users: 'login' }, async ({ bot, actor }) => {
+  test('state に DM の内容は含まれない', { users: 'login', seed: sender }, async ({ bot, actor }) => {
     await actor.command('dm', { target });
     const state = await bot.state();
     expect(JSON.stringify(state.messages)).not.toContain('Secret message');
   });
 
-  test('別のユーザーでログイン中は DM チャンネルを読めない', { users: 'login' }, async ({ bot, actor }) => {
+  test('別のユーザーでログイン中は DM チャンネルを読めない', { users: 'login', seed: sender }, async ({ bot, actor }) => {
     await actor.command('dm', { target });
     await actor.login();
     const state = await bot.state();
-    const dm = Object.values<any>(state.channels).find((channel) => channel.recipients);
+    const dm = Object.values<any>(state.channels).find((channel) => channel.recipients?.[0].id === target.id);
     await expect(bot.messages(dm.id)).rejects.toThrow('ログイン');
     const all = await bot.messages();
     expect(all.map((message) => message.content)).not.toContain('Secret message');

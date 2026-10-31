@@ -218,7 +218,7 @@ describe('Google スプレッドシート', () => {
       requestBody: { requests: [{ addSheet: { properties: { title: 'New' } } }] },
     });
     const { data } = await sheets.spreadsheets.get({ spreadsheetId: 'book' });
-    expect(data.sheets!.map((sheet) => sheet.properties!.title)).toEqual(['Data', 'New']);
+    expect(data.sheets!.map((sheet) => sheet.properties!.title)).toEqual(expect.arrayContaining(['Data', 'New']));
   });
 
   test('存在しないものは本物と同じエラー', { seed }, async () => {

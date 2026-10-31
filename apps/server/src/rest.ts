@@ -118,7 +118,7 @@ export class Rest {
     api('GET', '/channels/:channel/messages', ({ params, query }) => {
       store.requireChannel(params.channel!);
       const limit = Number(query.get('limit') ?? 50);
-      return (store.state.messages[params.channel!] ?? []).slice(-limit).reverse();
+      return this.chatMessages(params.channel!).slice(-limit).reverse();
     });
     api('POST', '/channels/:channel/messages', ({ params, body }) =>
       store.createMessage(params.channel!, store.botUser, body),
@@ -165,9 +165,9 @@ export class Rest {
       this.route(method, `/api/mock${path}`, handler);
 
     mock('GET', '/state', () => ({ ...store.publicState(), botConnected: this.botConnected() }));
-    mock('POST', '/reset', ({ body }) => {
+    mock('POST', '/reset', () => {
       interactions.clear();
-      store.reset(body.label);
+      store.reset();
       return { ok: true };
     });
     mock('POST', '/seed', ({ body }) => store.seed(body));
@@ -238,7 +238,6 @@ export class Rest {
     });
     mock('GET', '/db', ({ query }) => tests.readDb(query.get('project'), query.get('id')));
     mock('POST', '/tests/finish', ({ body }) => {
-      store.endTestSession();
       tests.finish(body.activeBot ?? null);
       return { ok: true };
     });
@@ -250,12 +249,8 @@ export class Rest {
       tests.selectBot(body.project);
       return { ok: true };
     });
-    mock('POST', '/tests/session/begin', () => {
-      store.beginTestSession();
-      return { ok: true };
-    });
-    mock('POST', '/tests/session/end', () => {
-      store.endTestSession();
+    mock('POST', '/tests/mark', ({ body }) => {
+      store.addTestDivider(body.channelId, body.label);
       return { ok: true };
     });
   }
@@ -266,11 +261,16 @@ export class Rest {
     if (channelId) {
       const channel = store.requireChannel(channelId);
       if (channel.recipients) return store.dmsFor(channel.recipients[0].id);
-      return store.state.messages[channelId] ?? [];
+      return this.chatMessages(channelId);
     }
-    return Object.entries(store.state.messages)
-      .filter(([id]) => !store.state.channels[id]?.recipients)
-      .flatMap(([, messages]) => messages);
+    return Object.keys(store.state.messages)
+      .filter((id) => !store.state.channels[id]?.recipients)
+      .flatMap((id) => this.chatMessages(id));
+  }
+
+  /** テストの区切りは画面だけのもので、Bot やテストのメッセージには含めない。 */
+  private chatMessages(channelId: string): Json[] {
+    return (this.store.state.messages[channelId] ?? []).filter((message) => message.dismock_test === undefined);
   }
 
   async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {

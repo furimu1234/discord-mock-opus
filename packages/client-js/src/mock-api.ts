@@ -25,7 +25,7 @@ export class MockApi {
   }
 
   state = () => this.request<Json>('/state');
-  reset = (label?: string) => this.post('/reset', { label });
+  reset = () => this.post('/reset');
   seed = (input: SeedInput) => this.post<Json>('/seed', input);
   switchUser = (userId: string) => this.post('/switch-user', { userId });
   interact = (request: InteractRequest) => this.post<InteractResult>('/interact', request);
@@ -42,8 +42,13 @@ export class MockApi {
     return this.request<Json[]>(`/messages${query}`);
   }
 
-  beginTestSession = () => this.post('/tests/session/begin');
-  endTestSession = () => this.post('/tests/session/end');
+  mark = (channelId: string, label: string) => this.post('/tests/mark', { channelId, label });
+  join = (guildId: string, userId: string) =>
+    this.request<Json>(`/guilds/${guildId}/members/${userId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ roles: [] }),
+    });
 
   dms(userId: string): Promise<Json[]> {
     return this.request<Json[]>(`/dms?userId=${userId}`);

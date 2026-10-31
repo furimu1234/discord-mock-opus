@@ -7,7 +7,6 @@ export type Json = Record<string, any>;
 
 const DISCORD_EPOCH = 1420070400000n;
 const ADMINISTRATOR = '8';
-const EPHEMERAL = 64;
 const EVERYONE_PERMISSIONS = '2248473465835073';
 
 export const ChannelType = { text: 0, dm: 1, voice: 2, category: 4 } as const;
@@ -125,12 +124,6 @@ function emptyState(): MockState {
 export class Store extends EventEmitter {
   state: MockState;
   private saveTimer: NodeJS.Timeout | null = null;
-  /** テストの実行中に退避している状態。JSON にはこちらを保存する。 */
-  private saved: MockState | null = null;
-  /** テスト中のメッセージ。テストごとに状態を消しても、終了後に画面へ残す。 */
-  private archived: Json[] = [];
-  /** 実行中のテストの名前。最初のテストが始まるまでは `undefined`。 */
-  private testLabel: string | undefined;
 
   constructor(private readonly file?: string) {
     super();
@@ -166,7 +159,7 @@ export class Store extends EventEmitter {
     if (!this.file) return;
     mkdirSync(dirname(this.file), { recursive: true });
     // トークンを含むため、所有者以外は読めないようにする。
-    writeFileSync(this.file, JSON.stringify(this.saved ?? this.state, null, 2), { mode: 0o600 });
+    writeFileSync(this.file, JSON.stringify(this.state, null, 2), { mode: 0o600 });
   }
 
   private dispatch(event: string, data: Json): void {
@@ -174,9 +167,7 @@ export class Store extends EventEmitter {
   }
 
   /** トークンと Bot のユーザー、アプリケーション、登録済みコマンドを残して初期化する。 */
-  reset(testLabel?: string): void {
-    this.archiveMessages();
-    if (this.saved) this.testLabel = testLabel ?? '';
+  reset(): void {
     const { token, url, applicationId, botUserId, commands } = this.state;
     const bot = this.botUser;
     this.state = { ...emptyState(), token, url, applicationId, botUserId, commands, users: { [botUserId]: bot } };
@@ -190,59 +181,18 @@ export class Store extends EventEmitter {
     this.flush();
   }
 
-  /** テストの開始時に状態を退避する。実行中に JSON のダミーデータは変わらない。 */
-  beginTestSession(): void {
-    this.saved ??= structuredClone(this.state);
-    this.archived = [];
-    this.testLabel = undefined;
-  }
-
-  /** テスト中のメッセージを退避する。DM とエフェメラルは公開しない。 */
-  private archiveMessages(): void {
-    if (!this.saved || this.testLabel === undefined) return;
-    const messages = Object.entries(this.state.messages)
-      .filter(([id]) => !this.state.channels[id]?.recipients)
-      .flatMap(([, list]) => list)
-      .filter((message) => ((message.flags as number) & EPHEMERAL) === 0)
-      .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
-    if (messages.length === 0) return;
-    const divider = {
+  /** テストの区切りを画面に表示する。Bot には通知しない。 */
+  addTestDivider(channelId: string, label: string): void {
+    this.requireChannel(channelId);
+    (this.state.messages[channelId] ??= []).push({
       id: snowflake(),
+      channel_id: channelId,
       author: this.botUser,
       content: '',
-      timestamp: messages[0]!.timestamp,
+      timestamp: new Date().toISOString(),
       flags: 0,
-      dismock_test: this.testLabel,
-    };
-    this.archived.push(divider, ...messages);
-  }
-
-  /** 退避したメッセージを、最初のサーバーの最初のテキストチャンネルへ追加する。 */
-  private restoreArchivedMessages(): void {
-    if (this.archived.length === 0) return;
-    const channels = Object.values(this.state.channels)
-      .filter((channel) => channel.type === ChannelType.text)
-      .sort((a, b) => a.position - b.position);
-    const guildId = Object.keys(this.state.guilds)[0];
-    const target =
-      channels.find((channel) => channel.guild_id === guildId) ??
-      this.seed({ channels: [{ name: 'テスト結果' }] }).channels[0];
-    const messages = (this.state.messages[target.id] ??= []);
-    for (const message of this.archived) {
-      messages.push({ ...message, channel_id: target.id, guild_id: target.guild_id });
-    }
-    target.last_message_id = messages.at(-1)!.id;
-    this.archived = [];
-  }
-
-  /** テストの開始前の状態に戻す。Bot が登録したコマンドは引き継ぐ。 */
-  endTestSession(): void {
-    if (!this.saved) return;
-    this.archiveMessages();
-    this.state = { ...this.saved, commands: this.state.commands };
-    this.saved = null;
-    this.testLabel = undefined;
-    this.restoreArchivedMessages();
+      dismock_test: label,
+    });
     this.changed();
   }
 
@@ -463,9 +413,10 @@ export class Store extends EventEmitter {
     if (needsGuild && Object.keys(this.state.guilds).length === 0) {
       guilds.push(this.createGuild({ name: 'Test Guild' }));
     }
+    // 同じ名前のサーバーがあるときは、今回追加したサーバーを優先する。
     const resolveGuild = (ref?: string): string => {
-      if (!ref) return Object.keys(this.state.guilds)[0]!;
-      const found = Object.values(this.state.guilds).find((g) => g.id === ref || g.name === ref);
+      if (!ref) return guilds[0]?.id ?? Object.keys(this.state.guilds)[0]!;
+      const found = [...guilds, ...Object.values(this.state.guilds)].find((g) => g.id === ref || g.name === ref);
       if (!found) throw new NotFound(`Unknown guild: ${ref}`);
       return found.id;
     };

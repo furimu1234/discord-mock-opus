@@ -1,60 +1,63 @@
 import { describe, expect, test } from '@dismock/test';
 
+const newUser = { users: [{ username: 'db-user' }] };
+const fieldOf = (reply: Record<string, any>) => Number(/\d+/.exec(reply.content)![0]);
+
 describe('pg + drizzle', () => {
-  test('Bot の接続がインメモリ DB に届く', { users: 'login' }, async ({ actor, user, db }) => {
+  test('Bot の接続がインメモリ DB に届く', { users: 'login', seed: newUser }, async ({ actor, user, db }) => {
     await actor.command('levelup');
+    const before = fieldOf(await actor.command('level'));
     const reply = await actor.command('levelup');
-    expect(reply.content).toBe('Level 2');
-    await expect(db.pg().rows('levels')).resolves.toEqual([{ user_id: user.id, level: 2 }]);
+    expect(fieldOf(reply)).toBe(before + 1);
+    await expect(db.pg().query('SELECT level FROM levels WHERE user_id = $1', [user.id])).resolves.toEqual([{ level: before + 1 }]);
   });
 
-  test('テストごとにデータは空になる', { users: 'login' }, async ({ db }) => {
-    await expect(db.pg().rows('levels')).resolves.toEqual([]);
-  });
-
-  test('初期データを投入できる', { users: 'login', seed: { users: [{ id: '100', username: 'veteran' }], db: { pg: { levels: [{ user_id: '100', level: 41 }] } } } }, async ({ actor }) => {
-    await expect(actor.command('levelup')).resolves.toMatchObject({ content: 'Level 42' });
+  test('初期データを投入できる', { users: 'login', seed: newUser }, async ({ actor, user, db }) => {
+    const level = 41;
+    await db.pg().seed({ levels: [{ user_id: user.id, level }] });
+    await expect(actor.command('levelup')).resolves.toMatchObject({ content: `Level ${level + 1}` });
   });
 });
 
 describe('mysql2', () => {
-  test('INSERT と SELECT', { users: 'login' }, async ({ actor, user, db }) => {
-    await actor.command('note', { body: 'first' });
-    const reply = await actor.command('note', { body: "it's second" });
-    expect(reply.content).toBe('Notes: 2');
-    const rows = db.mysql().rows<{ id: number; body: string; created_at: Date; user_id: string }>('notes');
-    expect(rows.map((row) => row.id)).toEqual([1, 2]);
-    expect(rows[1]!.body).toBe("it's second");
-    expect(rows[1]!.user_id).toBe(user.id);
+  test('INSERT と SELECT', { users: 'login', seed: newUser }, async ({ actor, user, db }) => {
+    const bodies = ['first', "it's second"];
+    await actor.command('note', { body: bodies[0] });
+    const reply = await actor.command('note', { body: bodies[1] });
+    expect(reply.content).toBe(`Notes: ${bodies.length}`);
+    const rows = db
+      .mysql()
+      .query<{ id: number; body: string; created_at: Date }>('SELECT * FROM notes WHERE user_id = ? ORDER BY id', [user.id]);
+    expect(rows.map((row) => row.body)).toEqual(bodies);
+    expect(rows[1]!.id).toBe(rows[0]!.id + 1);
     expect(rows[1]!.created_at).toBeInstanceOf(Date);
-  });
-
-  test('連番はテストごとに戻る', { users: 'login' }, async ({ actor, db }) => {
-    await actor.command('note', { body: 'again' });
-    expect(db.mysql().rows<{ id: number }>('notes')[0]!.id).toBe(1);
   });
 });
 
 describe('better-sqlite3', () => {
-  test('サブコマンドで保存して読み出す', { users: 'login' }, async ({ actor, db }) => {
-    await actor.command('tag set', { name: 'rule', content: 'be nice' });
-    await expect(actor.command('tag get', { name: 'rule' })).resolves.toMatchObject({ content: 'be nice' });
-    expect(db.sqlite().rows('tags')).toEqual([{ name: 'rule', content: 'be nice' }]);
+  test('サブコマンドで保存して読み出す', { users: 'login', seed: newUser }, async ({ actor, user, db }) => {
+    const name = `rule-${user.id}`;
+    const content = 'be nice';
+    await actor.command('tag set', { name, content });
+    await expect(actor.command('tag get', { name })).resolves.toMatchObject({ content });
+    expect(db.sqlite().query('SELECT content FROM tags WHERE name = ?', name as never)).toEqual([{ content }]);
   });
 });
 
 describe('Google スプレッドシート', () => {
-  const seed = {
-    db: { sheets: { scores: { Scores: [['name', 'score'], ['alice', 10], ['bob', 30]] } } },
-  };
+  const header = ['name', 'score'];
+  const rows: [string, number][] = [['alice', 10], ['bob', 30]];
+  const seed = { ...newUser, db: { sheets: { scores: { Scores: [header, ...rows] } } } };
+  const nextRow = rows.length + 2;
 
   test('初期データを読み取る', { users: 'login', seed }, async ({ actor }) => {
     await expect(actor.command('top')).resolves.toMatchObject({ content: 'Top: bob' });
   });
 
-  test('行を追加する', { users: 'login', seed }, async ({ actor, db }) => {
-    await actor.command('score', { value: 99 });
-    await expect(actor.command('top')).resolves.toMatchObject({ content: 'Top: test-user' });
-    expect(db.sheets().values('scores', 'Scores!A4:B4')).toEqual([['test-user', '99']]);
+  test('行を追加する', { users: 'login', seed }, async ({ actor, user, db }) => {
+    const score = Math.max(...rows.map(([, value]) => value)) + 1;
+    await actor.command('score', { value: score });
+    await expect(actor.command('top')).resolves.toMatchObject({ content: `Top: ${user.username}` });
+    expect(db.sheets().values('scores', `Scores!A${nextRow}:B${nextRow}`)).toEqual([[user.username, String(score)]]);
   });
 });
