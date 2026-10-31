@@ -18,6 +18,7 @@ interface Route {
 }
 
 const NO_CONTENT = Symbol('no-content');
+const PUBLIC_PATHS = [/^\/api\/v10\/gateway$/, /^\/api\/v10\/interactions\//, /^\/api\/v10\/webhooks\//];
 
 function compile(path: string): Pick<Route, 'pattern' | 'keys'> {
   const keys: string[] = [];
@@ -36,7 +37,6 @@ export class Rest {
     private readonly store: Store,
     private readonly interactions: Interactions,
     private readonly gatewayUrl: () => string,
-    private readonly mockToken: string,
   ) {
     this.discordRoutes();
     this.mockRoutes();
@@ -159,8 +159,10 @@ export class Rest {
     const mock = (method: string, path: string, handler: Handler) =>
       this.route(method, `/api/mock${path}`, handler);
 
-    mock('GET', '/token', () => ({ token: this.mockToken }));
-    mock('GET', '/state', () => store.state);
+    mock('GET', '/state', () => {
+      const { token: _token, ...state } = store.state;
+      return state;
+    });
     mock('POST', '/reset', () => {
       interactions.clear();
       store.reset();
@@ -215,6 +217,9 @@ export class Rest {
       if (path.startsWith('/api/mock') && !this.allowed(req)) {
         return this.json(res, 415, { message: 'application/json が必要です', code: 0 });
       }
+      if (!this.authenticated(req, path)) {
+        return this.json(res, 401, { message: '401: Unauthorized', code: 0 });
+      }
       const params = Object.fromEntries(
         route.keys.map((key, i) => [key, decodeURIComponent(route.match[i + 1]!)]),
       );
@@ -229,6 +234,12 @@ export class Rest {
       const failure = error as Error & { status?: number; code?: number };
       this.json(res, failure.status ?? 400, { message: failure.message, code: failure.code ?? 0 });
     }
+  }
+
+  /** Discord と同じく、Gateway の URL の取得とインタラクションの応答には認証が不要。 */
+  private authenticated(req: IncomingMessage, path: string): boolean {
+    if (PUBLIC_PATHS.some((pattern) => pattern.test(path))) return true;
+    return req.headers.authorization?.replace(/^Bot\s+/i, '') === this.store.state.token;
   }
 
   /** 他サイトのページから CORS を経由せずに状態を変更されないようにする。 */

@@ -16,6 +16,7 @@ const Op = {
 } as const;
 
 const HEARTBEAT_INTERVAL = 45000;
+const AUTHENTICATION_FAILED = 4004;
 
 interface Session {
   socket: WebSocket;
@@ -68,9 +69,10 @@ export class Gateway {
         this.send(session, Op.heartbeatAck, null);
         break;
       case Op.identify:
-        this.ready(session);
+        if (this.authenticate(session, packet.d.token)) this.ready(session);
         break;
       case Op.resume:
+        if (!this.authenticate(session, packet.d.token)) break;
         session.identified = true;
         this.dispatchTo(session, 'RESUMED', {});
         break;
@@ -86,6 +88,12 @@ export class Gateway {
         this.memberChunk(session, packet.d);
         break;
     }
+  }
+
+  private authenticate(session: Session, token: string): boolean {
+    if (token === this.store.state.token) return true;
+    session.socket.close(AUTHENTICATION_FAILED, 'Authentication failed');
+    return false;
   }
 
   private ready(session: Session): void {

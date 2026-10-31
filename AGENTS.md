@@ -24,10 +24,15 @@ Discord Bot のテストを自動化するための Discord モックです。Bo
 nix-shell
 pnpm install
 pnpm build       # apps と packages をビルドする
-pnpm test        # ビルドして examples のテストを実行する
+pnpm web         # Mock を起動する（既定は 127.0.0.1:6470）
+pnpm test        # ビルドし、起動中の Mock に接続して examples のテストを実行する
+pnpm app         # Mock を起動してからテストを実行する。Ctrl+C で終了する
 pnpm typecheck   # 型チェック
-pnpm server      # Mock サーバーを起動する（既定は 127.0.0.1:6464）
 ```
+
+`pnpm test` には起動中の Mock が必要です。Mock を起動していない場合は `pnpm app` を使ってください。テストは Mock の状態を初期化するため、`data/discord-mock-state.json` のユーザーやチャンネルは消えます。トークンは残ります。
+
+トークンは `data/discord-mock-state.json` に保存されます。`data/` はコミットしないでください。
 
 `examples/*` のテストは `packages/*/dist` を参照します。`apps` や `packages` を変更したら、ビルドしてからテストしてください。
 

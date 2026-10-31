@@ -1,9 +1,11 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { closeEngines, db, runtime, stopServer, type TestClient } from '@dismock/client';
+import { closeEngines, db, runtime, StartupError, type TestClient } from '@dismock/client';
 import { createSuite, setCurrentSuite, type HookFn, type Suite, type TestCase, type TestContext } from './index.js';
 
 const DEFAULT_TIMEOUT_MS = 5000;
+/** テストの失敗（1）と区別する終了コード。`pnpm app` はこれを見て Mock も止める。 */
+const EXIT_STARTUP_FAILURE = 2;
 
 interface Totals {
   passed: number;
@@ -17,6 +19,11 @@ const totals: Totals = { passed: 0, failed: 0, skipped: 0, failures: [] };
 let failCurrentTest: ((error: unknown) => void) | undefined;
 
 /** Bot 内の未処理のエラーでランナーを止めず、実行中のテストの失敗として記録する。 */
+function abortStartup(error: unknown): never {
+  console.error(`起動エラー: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(EXIT_STARTUP_FAILURE);
+}
+
 function reportBotError(error: unknown): void {
   if (failCurrentTest) failCurrentTest(error);
   else {
@@ -76,6 +83,7 @@ async function runTest(test: TestCase, suite: Suite, title: string, context: Tes
     totals.passed += 1;
     console.log(`  ✓ ${title}`);
   } catch (error) {
+    if (error instanceof StartupError) abortStartup(error);
     totals.failed += 1;
     totals.failures.push({ title, error });
     console.log(`  ✕ ${title}`);
@@ -127,6 +135,7 @@ async function main(): Promise<number> {
   };
   const filter = config.filter ? new RegExp(config.filter) : undefined;
   if (config.setup) await import(pathToFileURL(resolve(config.setup)).href);
+  await (runtime.testClient as TestClient | undefined)?.connect();
 
   const files: { file: string; root: Suite }[] = [];
   for (const file of config.files) {
@@ -144,16 +153,9 @@ async function main(): Promise<number> {
 
   await (runtime.testClient as TestClient | undefined)?.destroy();
   await closeEngines();
-  await stopServer();
   printFailures();
   console.log(`\nTests: ${totals.failed} failed, ${totals.passed} passed, ${totals.skipped} skipped`);
   return totals.failed > 0 ? 1 : 0;
 }
 
-main().then(
-  (code) => process.exit(code),
-  (error: unknown) => {
-    console.error(error);
-    process.exit(1);
-  },
-);
+main().then((code) => process.exit(code), abortStartup);

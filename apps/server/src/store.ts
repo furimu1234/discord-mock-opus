@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -20,6 +21,10 @@ export interface GuildRecord {
 }
 
 export interface MockState {
+  /** Bot のトークン。一度発行したら JSON に保存して使い回す。 */
+  token: string;
+  /** 起動中の Mock の URL。testClient の接続先になる。 */
+  url: string | null;
   applicationId: string;
   botUserId: string;
   users: Record<string, Json>;
@@ -83,7 +88,10 @@ export function snowflake(): string {
 
 function emptyState(): MockState {
   const botUserId = snowflake();
+  const secret = randomBytes(20).toString('base64url');
   return {
+    token: `${Buffer.from(botUserId).toString('base64url')}.mock.${secret}`,
+    url: null,
     applicationId: botUserId,
     botUserId,
     users: {
@@ -124,6 +132,12 @@ export class Store extends EventEmitter {
     return { ...emptyState(), ...JSON.parse(readFileSync(file, 'utf8')) };
   }
 
+  /** 起動時に URL を記録し、トークンとともに JSON へ保存する。 */
+  published(url: string): void {
+    this.state.url = url;
+    this.flush();
+  }
+
   get botUser(): Json {
     return this.state.users[this.state.botUserId]!;
   }
@@ -139,18 +153,19 @@ export class Store extends EventEmitter {
     this.saveTimer = null;
     if (!this.file) return;
     mkdirSync(dirname(this.file), { recursive: true });
-    writeFileSync(this.file, JSON.stringify(this.state, null, 2));
+    // トークンを含むため、所有者以外は読めないようにする。
+    writeFileSync(this.file, JSON.stringify(this.state, null, 2), { mode: 0o600 });
   }
 
   private dispatch(event: string, data: Json): void {
     this.emit('dispatch', event, data);
   }
 
-  /** Bot のユーザーとアプリケーション、登録済みコマンドを残して初期化する。 */
+  /** トークンと Bot のユーザー、アプリケーション、登録済みコマンドを残して初期化する。 */
   reset(): void {
-    const { applicationId, botUserId, commands } = this.state;
+    const { token, url, applicationId, botUserId, commands } = this.state;
     const bot = this.botUser;
-    this.state = { ...emptyState(), applicationId, botUserId, commands, users: { [botUserId]: bot } };
+    this.state = { ...emptyState(), token, url, applicationId, botUserId, commands, users: { [botUserId]: bot } };
     this.changed();
   }
 

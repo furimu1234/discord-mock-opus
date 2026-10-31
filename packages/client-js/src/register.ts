@@ -1,6 +1,7 @@
 import { createRequire, registerHooks } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { ensureServer, mockToken, runtime } from './runtime.js';
+import { connection } from './connection.js';
+import { runtime } from './runtime.js';
 
 /**
  * テストの実行時に `--import` で読み込むエントリー。
@@ -21,6 +22,7 @@ const REDIRECTS: Record<string, string> = {
 
 interface RestLike {
   options: { api: string };
+  setToken(token: string): unknown;
 }
 
 interface DiscordClientLike {
@@ -38,8 +40,11 @@ const patched = new Set<string>();
 function patchRest({ REST }: ModuleExports): void {
   if (!REST) return;
   const { queueRequest } = REST.prototype;
+  // Bot が指定したトークンは Discord 用のものなので、Mock のトークンに置き換える。
   REST.prototype.queueRequest = async function (this: RestLike, request: unknown) {
-    this.options.api = `${await ensureServer()}/api`;
+    const { url, token } = connection();
+    this.options.api = `${url}/api`;
+    this.setToken(token);
     return queueRequest.call(this, request);
   } as never;
 }
@@ -47,11 +52,12 @@ function patchRest({ REST }: ModuleExports): void {
 function patchClient({ Client }: ModuleExports): void {
   if (!Client) return;
   const { login } = Client.prototype;
-  // 本物のトークンは使わず、Mock サーバーが発行したトークンでログインする。
+  // 本物のトークンは使わず、Mock が発行したトークンでログインする。
   Client.prototype.login = async function (this: DiscordClientLike) {
     runtime.loginClients.push(this);
-    this.rest.options.api = `${await ensureServer()}/api`;
-    return login.call(this, await mockToken());
+    const { url, token } = connection();
+    this.rest.options.api = `${url}/api`;
+    return login.call(this, token);
   };
 }
 

@@ -7,6 +7,26 @@ describe('通信先', () => {
     await expect(rest.get(Routes.user())).resolves.toMatchObject({ username: 'mock-bot' });
     expect((rest as unknown as { options: { api: string } }).options.api).toMatch(/^http:\/\/127\.0\.0\.1:/);
   });
+
+  test('トークンが違うと REST は 401 を返す', { users: 'login' }, async ({ bot }) => {
+    const { api } = (bot.client.rest as { options: { api: string } }).options;
+    const response = await fetch(`${api}/v10/users/@me`, { headers: { authorization: 'Bot wrong' } });
+    expect(response.status).toBe(401);
+    const state = await fetch(`${api}/mock/state`, { headers: { authorization: 'Bot wrong' } });
+    expect(state.status).toBe(401);
+  });
+
+  test('トークンが違うと Gateway は 4004 で切断する', { users: 'login' }, async ({ bot }) => {
+    const { api } = (bot.client.rest as { options: { api: string } }).options;
+    const socket = new WebSocket(`${api.replace(/^http/, 'ws').replace(/\/api$/, '')}/gateway?v=10`);
+    const closed = new Promise<number>((resolve) => socket.addEventListener('close', (event) => resolve(event.code)));
+    socket.addEventListener('open', () => socket.send(JSON.stringify({ op: 2, d: { token: 'wrong' } })));
+    await expect(closed).resolves.toBe(4004);
+  });
+
+  test('state からトークンは取得できない', { users: 'login' }, async ({ bot }) => {
+    await expect(bot.state()).resolves.not.toHaveProperty('token');
+  });
 });
 
 describe('スラッシュコマンド', () => {

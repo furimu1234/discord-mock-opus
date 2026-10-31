@@ -45,7 +45,6 @@ Mock 側は、本番の Discord インフラや外部ネットワークに一切
   - `/api/v10/gateway/bot`: ローカル Gateway 接続先 URL の返却
   - `/api/v10/users/@me/channels`: Bot からの DM チャンネル作成
   - `/api/v10/guilds/:guildId/roles`: ロールの取得・作成
-  - `/api/mock/token`: テスト用自動トークンの生成・配布
   - `/api/mock/interact`: スラッシュコマンド（Application Command）およびコンポーネント（ボタン、セレクト）のインタラクション受付
   - `/api/mock/switch-user`: 操作ダミーユーザーの動的切り替え
   - `/api/mock/state` & `/api/mock/reset`: モック内部状態の取得および初期化
@@ -62,6 +61,16 @@ Mock 側は、本番の Discord インフラや外部ネットワークに一切
 ### 2.3. CLI 起動要件
 - CLI（`dismock-server`）で起動すると Mock サーバーが立ち上がり、URL を発行する。
 - 利用者は発行された URL をブラウザで開いて Web UI を使う。
+- 起動時にトークンを発行し、状態の JSON に保存する。JSON に値があるときは、以後そのトークンを使い回す。
+- REST API、Gateway、`/api/mock` はトークンを検証し、一致しない場合は 401 または close code 4004 で拒否する。トークンを配布する API は設けない。
+
+| コマンド | 動作 |
+|---|---|
+| `pnpm web` | Mock を起動する |
+| `pnpm test` | 起動中の Mock に testClient で接続し、テストを実行する |
+| `pnpm app` | Mock を起動してからテストを実行する。テストの完了後も Mock は起動したままで、Ctrl+C で終了する |
+
+起動エラー（Mock を起動できない、Mock に接続できない、トークンが一致しない、Bot や DB の準備に失敗した）が発生すると、`pnpm app` は Mock も含めて終了する。テストの失敗は起動エラーではない。
 
 ### 2.4. ダミーデータ & 永続化要件
 - ダミーユーザー、チャンネル、ロール等は、テストコードと管理画面の両方から追加でき、どちらから追加しても同じデータとして扱う。
@@ -98,7 +107,8 @@ Mock 側は、本番の Discord インフラや外部ネットワークに一切
   - `discord.js` の `Client` と `REST` の通信先は、テストの実行時に読み込むフック（`@dismock/client/register`）が Mock へ差し替える。Bot が自分で作成した `REST` も対象で、本物のトークンは使わない。
   - `Proxy` パターンを採用し、本物の `Client` メソッド（`on`, `isReady` 等）と Mock 操作メソッド（`as`, `seed`, `messages` 等）の双方を同一インスタンスから呼び出し可能。名前が重なる `users` などは Mock 操作を優先し、本物は `bot.client` から使う。
 - **重複定義の排除（設定の一本化）**:
-  - `testClient` のオプションに、モック URL（`mockUrl`）、テーブルの作成（`setupDb`）、コマンド定義（`commands`）、全テスト共通の初期データ（`seed`）をまとめて指定可能。`mockUrl` を省略すると、テストのプロセス内で Mock サーバーを起動する。
+  - `testClient` のオプションに、モック URL（`mockUrl`）、認証トークン（`token`）、テーブルの作成（`setupDb`）、コマンド定義（`commands`）、全テスト共通の初期データ（`seed`）をまとめて指定可能。
+  - URL とトークンは、オプション、環境変数（`DISMOCK_URL`, `DISMOCK_TOKEN`）、`data/discord-mock-state.json` の順に優先する。JSON はカレントディレクトリから親へ順に探す。
   - `testClient` を定義するだけでグローバルに登録され、runner との二重定義は発生しない。テストランナーは `testClient.ts`（ルート、`__tests__/`、`tests/`、`test/`）を自動で読み込む。
 - **利用スタイルの両立**:
   - `testClient.ts` では `import * as disMock from '@dismock/client';` で読み込む。

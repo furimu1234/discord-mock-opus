@@ -2,11 +2,12 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Json, SeedChannel, SeedGuild, SeedInput, SeedRole, SeedUser } from '@dismock/server';
 import { Actor } from './actor.js';
+import { connection, StartupError, verifyConnection } from './connection.js';
 import { db, resetEngines } from './db/index.js';
 import type { SheetSeed } from './db/sheets.js';
 import type { SeedData } from './db/types.js';
 import { MockApi } from './mock-api.js';
-import { ensureServer, mockToken, runtime } from './runtime.js';
+import { runtime } from './runtime.js';
 
 /** Bot が公開している Client の最小限の形。discord.js の Client を想定している。 */
 export interface BotClient {
@@ -32,8 +33,10 @@ export interface TestSeed extends SeedInput {
 }
 
 export interface TestClientOptions {
-  /** 既存の Mock サーバーの URL。省略するとテストのプロセス内で起動する。 */
+  /** Mock の URL。省略すると `data/discord-mock-state.json` の値を使う。 */
   mockUrl?: string;
+  /** Mock のトークン。省略すると `data/discord-mock-state.json` の値を使う。 */
+  token?: string;
   /** Client を公開していない Bot のエントリーファイル。読み込むと Bot が起動する。 */
   entry?: string;
   /** 起動時に自動で登録しない Bot のためのコマンド定義。 */
@@ -68,6 +71,7 @@ export class TestClient {
   private api?: MockApi;
   private readonly options: TestClientOptions;
   private dbReady = false;
+  private verified?: Promise<void>;
   private defaultChannelId?: string;
   private defaultGuildId?: string;
 
@@ -93,7 +97,8 @@ export class TestClient {
   constructor(client?: BotClient | TestClientOptions, options?: TestClientOptions) {
     this.bot = isOptions(client) ? undefined : client;
     this.options = isOptions(client) ? (client ?? {}) : (options ?? {});
-    if (this.options.mockUrl) runtime.mockUrl = this.options.mockUrl;
+    if (this.options.mockUrl) runtime.overrides.url = this.options.mockUrl;
+    if (this.options.token) runtime.overrides.token = this.options.token;
 
     // Mock の操作を優先し、それ以外は本物の Client の持つプロパティを返す。
     const proxy = new Proxy(this, {
@@ -114,8 +119,15 @@ export class TestClient {
   }
 
   private async mock(): Promise<MockApi> {
-    this.api ??= new MockApi(await ensureServer());
+    await this.connect();
+    this.api ??= new MockApi(connection());
     return this.api;
+  }
+
+  /** Mock に接続でき、トークンが一致することを確認する。 */
+  connect(): Promise<void> {
+    this.verified ??= verifyConnection();
+    return this.verified;
   }
 
   /** Bot を Mock の Gateway にログインさせ、準備が完了するまで待つ。 */
@@ -125,8 +137,9 @@ export class TestClient {
     if (this.options.entry) await this.loadEntry();
     const bot = this.client;
     if (!bot.isReady() && !this.options.entry) {
-      bot.rest.options.api = `${await ensureServer()}/api`;
-      await bot.login(await mockToken());
+      const { url, token } = connection();
+      bot.rest.options.api = `${url}/api`;
+      await bot.login(token);
     }
     await this.waitUntilReady(bot);
   }
@@ -167,11 +180,7 @@ export class TestClient {
     this.defaultChannelId = undefined;
     this.defaultGuildId = undefined;
     await resetEngines();
-    if (options.users === 'login' && !this.bot?.isReady()) await this.login();
-    if (!this.dbReady) {
-      this.dbReady = true;
-      await this.options.setupDb?.();
-    }
+    await this.start(options);
 
     const seed = this.merge(this.options.seed, options.seed);
     if (options.users !== 'login') return { seeded: await this.seed(seed) };
@@ -191,6 +200,20 @@ export class TestClient {
       channel: state.channels[this.defaultChannelId!],
       seeded,
     };
+  }
+
+  /** Bot のログインと DB の準備に失敗すると、どのテストも実行できない。 */
+  private async start(options: PrepareOptions): Promise<void> {
+    try {
+      if (options.users === 'login' && !this.bot?.isReady()) await this.login();
+      if (!this.dbReady) {
+        this.dbReady = true;
+        await this.options.setupDb?.();
+      }
+    } catch (error) {
+      if (error instanceof StartupError) throw error;
+      throw new StartupError(`Bot を起動できません: ${(error as Error).message}`, { cause: error });
+    }
   }
 
   private merge(base: TestSeed = {}, extra: TestSeed = {}): TestSeed {

@@ -1,11 +1,16 @@
 import type { InteractRequest, InteractResult, Json, SeedInput } from '@dismock/server';
+import type { Connection } from './connection.js';
 
 /** Mock サーバーの `/api/mock` を呼び出すクライアント。 */
 export class MockApi {
-  constructor(private readonly url: string) {}
+  constructor(private readonly target: Connection) {}
 
-  private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${this.url}/api/mock${path}`, init);
+  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const { url, token } = this.target;
+    const response = await fetch(`${url}/api/mock${path}`, {
+      ...init,
+      headers: { ...init.headers, authorization: `Bot ${token}` },
+    });
     const data = (await response.json()) as T & { message?: string };
     if (!response.ok) throw new Error(`dismock: ${data.message ?? response.statusText}`);
     return data;
