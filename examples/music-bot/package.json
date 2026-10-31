@@ -1,0 +1,21 @@
+{
+  "name": "music-bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@discordjs/voice": "^0.19.2",
+    "discord.js": "^14.28.0",
+    "libsodium-wrappers": "^0.8.4",
+    "opusscript": "^0.1.1",
+    "youtube-dl-exec": "^3.1.19"
+  },
+  "devDependencies": {
+    "@dismock/client": "workspace:*",
+    "@dismock/test": "workspace:*",
+    "tsx": "^4.23.15"
+  }
+}

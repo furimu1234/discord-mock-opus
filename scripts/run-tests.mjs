@@ -3,6 +3,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EXIT_STARTUP_FAILURE } from '../packages/test/dist/constants.js';
+import { findTests } from '../packages/test/dist/spawn.js';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -20,7 +21,7 @@ export async function runTests(args = []) {
   const examples = join(ROOT, 'examples');
   const projects = readdirSync(examples)
     .map((name) => join(examples, name))
-    .filter((path) => existsSync(join(path, 'package.json')));
+    .filter((path) => existsSync(join(path, 'package.json')) && findTests(path).length > 0);
 
   let status = 0;
   for (const project of projects) {

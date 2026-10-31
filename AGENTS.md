@@ -19,7 +19,7 @@ Discord Bot のテストを自動化するための Discord モックです。Bo
 
 ## 開発環境
 
-すべてのコマンドは `nix-shell` の中で実行してください。VS Code の統合ターミナルは [.vscode/settings.json](.vscode/settings.json) の設定により、開くと自動で `nix-shell` に入ります。Node.js、pnpm、Python は [shell.nix](shell.nix) で固定しています。pnpm のストア、キャッシュ、一時ファイルは `.local/` に、Python の仮想環境は `.venv/` に置きます。
+すべてのコマンドは `nix-shell` の中で実行してください。VS Code の統合ターミナルは [.vscode/settings.json](.vscode/settings.json) の設定により、開くと自動で `nix-shell` に入ります。Node.js、pnpm、Python、ffmpeg は [shell.nix](shell.nix) で固定しています。pnpm のストア、キャッシュ、一時ファイルは `.local/` に、Python の仮想環境は `.venv/` に置きます。
 
 ```sh
 nix-shell
@@ -59,6 +59,7 @@ pnpm docs:build  # ドキュメントサイトを apps/docs/.vitepress/dist に�
 | `examples/sample-bot` | | Client を公開しない Bot。全機能の動作確認を兼ねる |
 | `examples/exported-client-bot` | | Client を公開する Bot と CommonJS の動作確認 |
 | `examples/leveling-bot` | | レベリング Bot。PostgreSQL と drizzle を使う実用的な例 |
+| `examples/music-bot` | | 音楽 Bot。`@discordjs/voice` と yt-dlp で YouTube の音声を再生する。yt-dlp はこのプロジェクトの依存（`youtube-dl-exec`）で、インストール時に取得する |
 
 ## 絶対に守ること
 

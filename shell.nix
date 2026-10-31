@@ -1,5 +1,5 @@
 # nix-shell で開発環境に入る。
-# Node、pnpm、Python はここで固定し、ストア、キャッシュ、仮想環境は
+# Node、pnpm、Python、ffmpeg はここで固定し、ストア、キャッシュ、仮想環境は
 # すべてプロジェクト内の .local/ と .venv/ に置く。
 let
   # nixos-26.05
@@ -46,6 +46,7 @@ pkgs.mkShell {
     node
     pnpm
     pkgs.python3
+    pkgs.ffmpeg-headless
   ];
 
   shellHook = ''

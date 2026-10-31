@@ -6,6 +6,8 @@ allowBuilds:
   # 型定義のためだけに入れており、実行時は node:sqlite のシムを使う。
   better-sqlite3: false
   esbuild: true
+  # music-bot が使う yt-dlp をインストール時に取得する。
+  youtube-dl-exec: true
 minimumReleaseAgeExclude:
   - '@discordjs/builders@1.15.0'
   - '@electric-sql/pglite@0.5.14'
