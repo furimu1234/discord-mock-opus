@@ -122,6 +122,8 @@ function emptyState(): MockState {
 export class Store extends EventEmitter {
   state: MockState;
   private saveTimer: NodeJS.Timeout | null = null;
+  /** テストの実行中に退避している状態。JSON にはこちらを保存する。 */
+  private saved: MockState | null = null;
 
   constructor(private readonly file?: string) {
     super();
@@ -145,6 +147,7 @@ export class Store extends EventEmitter {
   }
 
   private changed(): void {
+    this.emit('ui', 'STATE_SYNC', {});
     if (!this.file || this.saveTimer) return;
     this.saveTimer = setTimeout(() => this.flush(), 50);
     this.saveTimer.unref();
@@ -156,7 +159,7 @@ export class Store extends EventEmitter {
     if (!this.file) return;
     mkdirSync(dirname(this.file), { recursive: true });
     // トークンを含むため、所有者以外は読めないようにする。
-    writeFileSync(this.file, JSON.stringify(this.state, null, 2), { mode: 0o600 });
+    writeFileSync(this.file, JSON.stringify(this.saved ?? this.state, null, 2), { mode: 0o600 });
   }
 
   private dispatch(event: string, data: Json): void {
@@ -170,6 +173,109 @@ export class Store extends EventEmitter {
     this.state = { ...emptyState(), token, url, applicationId, botUserId, commands, users: { [botUserId]: bot } };
     this.changed();
   }
+
+  /** テストの開始時に状態を退避する。実行中に JSON のダミーデータは変わらない。 */
+  beginTestSession(): void {
+    this.saved ??= structuredClone(this.state);
+  }
+
+  /** テストの開始前の状態に戻す。Bot が登録したコマンドは引き継ぐ。 */
+  endTestSession(): void {
+    if (!this.saved) return;
+    this.state = { ...this.saved, commands: this.state.commands };
+    this.saved = null;
+    this.changed();
+  }
+
+  /** ダミーデータが 1 件もないとき、画面をすぐ操作できる初期データを入れる。 */
+  seedDefaults(): void {
+    if (Object.keys(this.state.guilds).length > 0) return;
+    const { users } = this.seed({
+      guilds: [{ name: 'テストサーバー' }],
+      channels: [
+        { name: 'テキストチャンネル', type: 'category' },
+        { name: '一般', parent: 'テキストチャンネル' },
+        { name: 'ボイスチャンネル', type: 'category' },
+        { name: 'ボイス', type: 'voice', parent: 'ボイスチャンネル' },
+      ],
+      roles: [{ name: '管理者', permissions: ADMINISTRATOR, color: 0xe67e22, hoist: true }],
+      users: [{ username: 'alice', roles: ['管理者'] }, { username: 'bob' }],
+    });
+    this.state.activeUserId = users[0].id;
+    this.changed();
+  }
+
+  switchUser(userId: string): void {
+    this.requireUser(userId);
+    this.state.activeUserId = userId;
+    this.changed();
+  }
+
+  updateUser(userId: string, patch: Json): Json {
+    const user = this.requireUser(userId);
+    if (typeof patch.username === 'string') user.username = patch.username;
+    if (patch.bot !== undefined) user.bot = Boolean(patch.bot);
+    if (patch.avatar !== undefined) user.avatar = patch.avatar;
+    this.changed();
+    for (const guild of Object.values(this.state.guilds)) {
+      const member = guild.members[userId];
+      if (member) this.dispatch('GUILD_MEMBER_UPDATE', { guild_id: guild.id, ...member });
+    }
+    return user;
+  }
+
+  deleteUser(userId: string): void {
+    if (userId === this.state.botUserId) throw new Error('Bot のユーザーは削除できません');
+    const user = this.requireUser(userId);
+    for (const guild of Object.values(this.state.guilds)) {
+      if (!guild.members[userId]) continue;
+      delete guild.members[userId];
+      this.dispatch('GUILD_MEMBER_REMOVE', { guild_id: guild.id, user });
+    }
+    delete this.state.users[userId];
+    if (this.state.activeUserId === userId) this.state.activeUserId = null;
+    this.changed();
+  }
+
+  deleteGuild(guildId: string): void {
+    this.requireGuild(guildId);
+    for (const channel of this.guildChannels(guildId)) {
+      delete this.state.channels[channel.id];
+      delete this.state.messages[channel.id];
+    }
+    delete this.state.guilds[guildId];
+    this.changed();
+    this.dispatch('GUILD_DELETE', { id: guildId, unavailable: false });
+  }
+
+  deleteChannel(channelId: string): void {
+    const channel = this.requireChannel(channelId);
+    delete this.state.channels[channelId];
+    delete this.state.messages[channelId];
+    this.changed();
+    this.dispatch('CHANNEL_DELETE', channel);
+  }
+
+  deleteRole(guildId: string, roleId: string): void {
+    const guild = this.requireGuild(guildId);
+    if (roleId === guildId) throw new Error('@everyone は削除できません');
+    guild.roles = guild.roles.filter((role) => role.id !== roleId);
+    for (const member of Object.values(guild.members)) {
+      member.roles = member.roles.filter((id: string) => id !== roleId);
+    }
+    this.changed();
+    this.dispatch('GUILD_ROLE_DELETE', { guild_id: guildId, role_id: roleId });
+  }
+
+  /** DM の中身を含まない状態を返す。DM の閲覧には `dmsFor` を使う。 */
+  publicState(): Json {
+    const { token: _token, ...state } = this.state;
+    const messages = Object.fromEntries(
+      Object.entries(state.messages).filter(([id]) => !this.state.channels[id]?.recipients),
+    );
+    return { ...state, messages };
+  }
+
 
   createUser(input: SeedUser): Json {
     const user = {

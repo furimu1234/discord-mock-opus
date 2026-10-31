@@ -5,8 +5,9 @@
   "engines": { "node": ">=24" },
   "scripts": {
     "build": "pnpm -r --filter './apps/*' --filter './packages/*' run build",
-    "web": "pnpm --filter @dismock/server run build && node apps/server/bin/dismock-server.js",
-    "test": "pnpm run build && node scripts/run-tests.mjs",
+    "web": "pnpm --filter @dismock/server --filter @dismock/web run build && node apps/server/bin/dismock-server.js",
+    "test": "pnpm run build && node packages/test/bin/dismock.js agent examples/*",
+    "test:run": "pnpm run build && node scripts/run-tests.mjs",
     "app": "node scripts/app.mjs",
     "typecheck": "pnpm -r run typecheck"
   },

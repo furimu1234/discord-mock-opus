@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Interactions, InteractRequest } from './interactions.js';
+import { serveStatic } from './static.js';
+import type { TestRegistry } from './tests.js';
 import { snowflake, type Json, type Store } from './store.js';
 
 interface Context {
@@ -36,7 +38,10 @@ export class Rest {
   constructor(
     private readonly store: Store,
     private readonly interactions: Interactions,
+    private readonly tests: TestRegistry,
     private readonly gatewayUrl: () => string,
+    private readonly botConnected: () => boolean,
+    private readonly webDir?: string,
   ) {
     this.discordRoutes();
     this.mockRoutes();
@@ -159,10 +164,7 @@ export class Rest {
     const mock = (method: string, path: string, handler: Handler) =>
       this.route(method, `/api/mock${path}`, handler);
 
-    mock('GET', '/state', () => {
-      const { token: _token, ...state } = store.state;
-      return state;
-    });
+    mock('GET', '/state', () => ({ ...store.publicState(), botConnected: this.botConnected() }));
     mock('POST', '/reset', () => {
       interactions.clear();
       store.reset();
@@ -170,8 +172,7 @@ export class Rest {
     });
     mock('POST', '/seed', ({ body }) => store.seed(body));
     mock('POST', '/switch-user', ({ body }) => {
-      store.requireUser(body.userId);
-      store.state.activeUserId = body.userId;
+      store.switchUser(body.userId);
       return { activeUserId: body.userId };
     });
     mock('POST', '/interact', ({ body }) => interactions.interact(body as InteractRequest));
@@ -189,6 +190,65 @@ export class Rest {
     );
     mock('GET', '/messages', ({ query }) => this.visibleMessages(query.get('channelId')));
     mock('GET', '/dms', ({ query }) => store.dmsFor(query.get('userId') ?? ''));
+    mock('POST', '/dm', ({ body }) => store.dmChannel(body.userId));
+    mock('PATCH', '/users/:id', ({ params, body }) => store.updateUser(params.id!, body));
+    mock('DELETE', '/users/:id', ({ params }) => {
+      store.deleteUser(params.id!);
+      return { ok: true };
+    });
+    mock('PUT', '/guilds/:guild/members/:user', ({ params, body }) => {
+      const member = store.requireGuild(params.guild!).members[params.user!];
+      if (member) return store.setMemberRoles(params.guild!, params.user!, body.roles ?? []);
+      return store.addMember(params.guild!, params.user!, body.roles ?? []);
+    });
+    mock('DELETE', '/guilds/:guild', ({ params }) => {
+      store.deleteGuild(params.guild!);
+      return { ok: true };
+    });
+    mock('DELETE', '/guilds/:guild/roles/:role', ({ params }) => {
+      store.deleteRole(params.guild!, params.role!);
+      return { ok: true };
+    });
+    mock('DELETE', '/channels/:channel', ({ params }) => {
+      store.deleteChannel(params.channel!);
+      return { ok: true };
+    });
+
+    const { tests } = this;
+    mock('GET', '/tests', () => tests.snapshot());
+    mock('POST', '/tests/register', ({ body }) => {
+      tests.register(body.projects, body.activeBot ?? null);
+      return { ok: true };
+    });
+    mock('POST', '/tests/run', ({ body }) => {
+      tests.requestRun(body.project, body.ids);
+      return { ok: true };
+    });
+    mock('POST', '/tests/report', ({ body }) => {
+      tests.report(body.project, body.id, body.result);
+      return { ok: true };
+    });
+    mock('POST', '/tests/finish', ({ body }) => {
+      store.endTestSession();
+      tests.finish(body.activeBot ?? null);
+      return { ok: true };
+    });
+    mock('POST', '/tests/reload', () => {
+      tests.reload();
+      return { ok: true };
+    });
+    mock('POST', '/tests/bot', ({ body }) => {
+      tests.selectBot(body.project);
+      return { ok: true };
+    });
+    mock('POST', '/tests/session/begin', () => {
+      store.beginTestSession();
+      return { ok: true };
+    });
+    mock('POST', '/tests/session/end', () => {
+      store.endTestSession();
+      return { ok: true };
+    });
   }
 
   /** DM は宛先のログインが必要なため、ここからは取得できない。 */
@@ -207,8 +267,13 @@ export class Rest {
   async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
+      if (!url.pathname.startsWith('/api/')) {
+        if (this.webDir) return serveStatic(this.webDir, url.pathname, res);
+        return this.json(res, 404, { message: '404: Not Found', code: 0 });
+      }
       // discord.js は `@original` を `%40original` として送る。
       const path = url.pathname.replaceAll('%40', '@');
+      if (path === '/api/mock/events') return this.events(req, res, url.searchParams.get('role'));
       const route = this.find(req.method ?? 'GET', path);
       if (!route) {
         console.warn(`[dismock] 未対応のルート: ${req.method} ${path}`);
@@ -242,10 +307,32 @@ export class Rest {
     return req.headers.authorization?.replace(/^Bot\s+/i, '') === this.store.state.token;
   }
 
-  /** 他サイトのページから CORS を経由せずに状態を変更されないようにする。 */
+  /** 他サイトのページからの呼び出しを拒否する。画面は同一オリジンなので通過する。 */
   private allowed(req: IncomingMessage): boolean {
-    if (req.method === 'GET') return !req.headers.origin;
+    const { origin, host } = req.headers;
+    if (origin && new URL(origin).host !== host) return false;
+    if (req.method === 'GET' || req.method === 'DELETE') return true;
     return req.headers['content-type']?.startsWith('application/json') === true;
+  }
+
+  /** 画面とエージェントへイベントを配信する Server-Sent Events。 */
+  private events(req: IncomingMessage, res: ServerResponse, role: string | null): void {
+    if (!this.allowed(req) || !this.authenticated(req, '/api/mock/events')) {
+      return this.json(res, 401, { message: '401: Unauthorized', code: 0 });
+    }
+    const { store, tests } = this;
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
+    // 状態の内容は流さず、更新があったことだけを伝える。DM もここからは見えない。
+    const send = (type: string, data: Json) => res.write(`data: ${JSON.stringify({ type, data })}\n\n`);
+    const keepAlive = setInterval(() => res.write(': keep-alive\n\n'), 15000);
+    store.on('ui', send);
+    if (role === 'agent') tests.setAgentConnected(true);
+    send('CONNECTED', {});
+    req.on('close', () => {
+      clearInterval(keepAlive);
+      store.off('ui', send);
+      if (role === 'agent') tests.setAgentConnected(false);
+    });
   }
 
   private find(method: string, path: string) {

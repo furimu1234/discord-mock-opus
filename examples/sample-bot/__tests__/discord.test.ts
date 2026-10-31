@@ -120,6 +120,12 @@ describe('DM', () => {
     await expect(actor.dms()).resolves.toEqual([]);
   });
 
+  test('state に DM の内容は含まれない', { users: 'login' }, async ({ bot, actor }) => {
+    await actor.command('dm', { target });
+    const state = await bot.state();
+    expect(JSON.stringify(state.messages)).not.toContain('Secret message');
+  });
+
   test('別のユーザーでログイン中は DM チャンネルを読めない', { users: 'login' }, async ({ bot, actor }) => {
     await actor.command('dm', { target });
     await actor.login();

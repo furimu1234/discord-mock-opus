@@ -25,14 +25,15 @@ nix-shell
 pnpm install
 pnpm build       # apps と packages をビルドする
 pnpm web         # Mock を起動する（既定は 127.0.0.1:6470）
-pnpm test        # ビルドし、起動中の Mock に接続して examples のテストを実行する
-pnpm app         # Mock を起動してからテストを実行する。Ctrl+C で終了する
+pnpm test        # 起動中の Mock に testClient を接続し、テスト画面からの実行を待つ
+pnpm app         # Mock と testClient の両方を起動する。Ctrl+C で終了する
+pnpm test:run    # 起動中の Mock に対して全テストを実行して終了する
 pnpm typecheck   # 型チェック
 ```
 
-`pnpm test` には起動中の Mock が必要です。Mock を起動していない場合は `pnpm app` を使ってください。テストは Mock の状態を初期化するため、`data/discord-mock-state.json` のユーザーやチャンネルは消えます。トークンは残ります。
+`pnpm web` と `pnpm app` は、ブラウザで開く URL をターミナルに表示します。`pnpm test` と `pnpm test:run` には起動中の Mock が必要です。`pnpm test:run` は testClient と Bot が重ならないよう、`pnpm web` だけを起動した状態で実行してください。
 
-トークンは `data/discord-mock-state.json` に保存されます。`data/` はコミットしないでください。
+トークンは `data/discord-mock-state.json` に保存され、画面の URL にも含まれます。`data/` はコミットせず、URL も共有しないでください。
 
 `examples/*` のテストは `packages/*/dist` を参照します。`apps` や `packages` を変更したら、ビルドしてからテストしてください。
 
@@ -40,17 +41,17 @@ pnpm typecheck   # 型チェック
 
 実装済みのものと未実装のものは次のとおりです。
 
-- 実装済み: REST API と Gateway のエミュレータ、`testClient`、テストランナーとテスト DSL、インメモリ DB（pg、mysql、sqlite、スプレッドシート）
-- 未実装: Web UI（テスト画面、管理画面、DB Studio）、音声の送受信（`VOICE_SERVER_UPDATE` と Voice Gateway）、`registerSchema`、Python 用ライブラリ
+- 実装済み: REST API と Gateway のエミュレータ、`testClient`、テストランナーとテスト DSL、インメモリ DB（pg、mysql、sqlite、スプレッドシート）、Web UI（テスト画面、管理画面）
+- 未実装: DB Studio、音声の送受信（`VOICE_SERVER_UPDATE` と Voice Gateway）、`registerSchema`、Python 用ライブラリ
 
 ## 構成
 
 | パス | パッケージ | 責務 |
 |---|---|---|
 | `apps/server` | `@dismock/server` | REST API と Gateway のエミュレータ、JSON への永続化 |
-| `apps/web` | 未作成 | テスト画面、管理画面、DB Studio |
+| `apps/web` | `@dismock/web` | テスト画面、管理画面（React、Vite）。Mock が同じ URL で配信する |
 | `packages/client-js` | `@dismock/client` | `testClient`、インメモリ DB、`import` を差し替えるフック |
-| `packages/test` | `@dismock/test` | テストランナーとテスト DSL |
+| `packages/test` | `@dismock/test` | テストランナー、テスト DSL、画面からの実行を受けるエージェント |
 | `examples/sample-bot` | | Client を公開しない Bot。全機能の動作確認を兼ねる |
 | `examples/exported-client-bot` | | Client を公開する Bot と CommonJS の動作確認 |
 

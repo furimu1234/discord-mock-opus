@@ -3,11 +3,13 @@ import type { AddressInfo } from 'node:net';
 import { Gateway } from './gateway.js';
 import { Interactions } from './interactions.js';
 import { Rest } from './rest.js';
+import { TestRegistry } from './tests.js';
 import { Store } from './store.js';
 
 export { Store } from './store.js';
 export type { Json, SeedChannel, SeedGuild, SeedInput, SeedRole, SeedUser } from './store.js';
 export type { InteractRequest, InteractResult } from './interactions.js';
+export type { TestCaseInfo, TestProject, TestResult } from './tests.js';
 
 export interface MockServerOptions {
   /** 既定は `127.0.0.1`。 */
@@ -16,6 +18,10 @@ export interface MockServerOptions {
   port?: number;
   /** 状態を保存する JSON ファイル。省略するとメモリ上にのみ保持する。 */
   dataFile?: string;
+  /** Web UI のビルド結果のディレクトリ。 */
+  webDir?: string;
+  /** ダミーデータが空のとき、初期データを投入する。 */
+  seedDefaults?: boolean;
 }
 
 export interface MockServer {
@@ -32,7 +38,9 @@ export async function startServer(options: MockServerOptions = {}): Promise<Mock
   const gatewayUrl = () => `${url.replace(/^http/, 'ws')}/gateway`;
   const gateway = new Gateway(store, gatewayUrl);
   const interactions = new Interactions(store, (event, data) => gateway.broadcast(event, data));
-  const rest = new Rest(store, interactions, gatewayUrl);
+  const tests = new TestRegistry(store);
+  const rest = new Rest(store, interactions, tests, gatewayUrl, () => gateway.hasBot, options.webDir);
+  if (options.seedDefaults) store.seedDefaults();
 
   const server: Server = createServer((req, res) => void rest.handle(req, res));
   gateway.attach(server);

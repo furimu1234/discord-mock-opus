@@ -1,5 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { EXIT_STARTUP_FAILURE, ROOT, runTests } from './run-tests.mjs';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { EXIT_STARTUP_FAILURE, ROOT } from './run-tests.mjs';
 
 const READY_MESSAGE = 'Discord Mock:';
 
@@ -16,31 +18,44 @@ const mock = spawn(process.execPath, ['apps/server/bin/dismock-server.js'], {
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 
+let agent;
 let stopping = false;
 
 function stop(code) {
   stopping = true;
+  agent?.kill();
   mock.once('exit', () => process.exit(code));
   mock.kill();
 }
 
 mock.once('exit', () => {
-  if (!stopping) fail('Mock が停止しました');
+  if (stopping) return;
+  agent?.kill();
+  fail('Mock が停止しました');
 });
 
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => stop(0));
 
+// どのような理由で終了しても、Mock と testClient を残さない。
+process.once('exit', () => {
+  agent?.kill();
+  mock.kill();
+});
+
 await new Promise((ready) => {
   mock.stdout.on('data', (chunk) => {
-    process.stdout.write(chunk);
+    console.log(chunk.toString().trimEnd());
     if (chunk.toString().includes(READY_MESSAGE)) ready();
   });
 });
 
-const status = await runTests(process.argv.slice(2));
-if (status === EXIT_STARTUP_FAILURE) {
+const examples = readdirSync(join(ROOT, 'examples')).map((name) => join('examples', name));
+agent = spawn(process.execPath, ['packages/test/bin/dismock.js', 'agent', ...examples], {
+  cwd: ROOT,
+  stdio: 'inherit',
+});
+agent.once('exit', (code) => {
+  if (stopping) return;
   console.error('app を終了します: testClient を起動できませんでした');
-  stop(status);
-} else {
-  console.log('\nテストが完了しました。Mock は起動したままです。Ctrl+C で終了します。');
-}
+  stop(code === EXIT_STARTUP_FAILURE ? code : 1);
+});

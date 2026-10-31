@@ -58,7 +58,10 @@ export class Gateway {
       identified: false,
     };
     this.sessions.add(session);
-    socket.on('close', () => this.sessions.delete(session));
+    socket.on('close', () => {
+      this.sessions.delete(session);
+      this.store.emit('ui', 'STATE_SYNC', {});
+    });
     socket.on('message', (raw) => this.received(session, JSON.parse(raw.toString())));
     this.send(session, Op.hello, { heartbeat_interval: HEARTBEAT_INTERVAL });
   }
@@ -99,6 +102,7 @@ export class Gateway {
   private ready(session: Session): void {
     const { store } = this;
     session.identified = true;
+    store.emit('ui', 'STATE_SYNC', {});
     const guilds = Object.values(store.state.guilds);
     this.dispatchTo(session, 'READY', {
       v: 10,
@@ -132,6 +136,10 @@ export class Gateway {
   private dispatchTo(session: Session, event: string, data: Json): void {
     session.sequence += 1;
     this.send(session, Op.dispatch, data, { t: event, s: session.sequence });
+  }
+
+  get hasBot(): boolean {
+    return [...this.sessions].some((session) => session.identified);
   }
 
   broadcast(event: string, data: Json): void {

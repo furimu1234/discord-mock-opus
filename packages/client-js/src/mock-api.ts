@@ -42,6 +42,9 @@ export class MockApi {
     return this.request<Json[]>(`/messages${query}`);
   }
 
+  beginTestSession = () => this.post('/tests/session/begin');
+  endTestSession = () => this.post('/tests/session/end');
+
   dms(userId: string): Promise<Json[]> {
     return this.request<Json[]>(`/dms?userId=${userId}`);
   }

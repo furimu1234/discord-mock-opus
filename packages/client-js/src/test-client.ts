@@ -226,6 +226,21 @@ export class TestClient {
     };
   }
 
+  /** テストの実行前後で、JSON に保存されたダミーデータを保護する。 */
+  async beginTestSession(): Promise<void> {
+    await (await this.mock()).beginTestSession();
+  }
+
+  async endTestSession(): Promise<void> {
+    await (await this.mock()).endTestSession();
+  }
+
+  /** テストを実行せず Bot を起動したままにする。画面からの手動操作に使う。 */
+  async serve(): Promise<void> {
+    await this.mock();
+    await this.start({ users: 'login' });
+  }
+
   /** Bot の持つキャッシュと Mock の状態を揃える。 */
   private clearCaches(): void {
     if (!this.bot?.isReady()) return;
