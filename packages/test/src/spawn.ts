@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, globSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 
 const SETUP_CANDIDATES = ['testClient', '__tests__/testClient', 'tests/testClient', 'test/testClient'];
 const EXTENSIONS = ['ts', 'mts', 'js', 'mjs'];
@@ -24,6 +24,19 @@ export function findTests(cwd: string, patterns: string[] = []): string[] {
   return files.filter((file) => patterns.some((pattern) => file.includes(pattern)));
 }
 
+/** テストのあるパッケージのディレクトリを返す。モノレポでは testClient のあるパッケージがプロジェクトになる。 */
+export function findProjectDir(cwd: string): string {
+  if (findSetup(cwd)) return cwd;
+  for (const file of findTests(cwd)) {
+    const parts = dirname(file).split(sep);
+    for (let depth = 1; depth <= parts.length; depth += 1) {
+      const dir = join(cwd, ...parts.slice(0, depth));
+      if (findSetup(dir)) return dir;
+    }
+  }
+  return cwd;
+}
+
 export interface RunnerConfig {
   mode?: 'run' | 'list' | 'bot';
   files: string[];
@@ -31,6 +44,7 @@ export interface RunnerConfig {
   filter?: string;
   ids?: string[];
   project?: string;
+  coverage?: boolean;
 }
 
 /** Bot のコードを差し替えるフックを読み込んだ Node でランナーを起動する。 */

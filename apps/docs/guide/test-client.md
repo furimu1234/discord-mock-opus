@@ -42,6 +42,15 @@ class MyTestBotClient extends disMock.TestClient {
 export const testClient = new MyTestBotClient(client, { token: disMock.connection().token });
 ```
 
+テストで `bot.visitNames()` を呼び出すと、`[{ name: 'alice' }, { name: 'bob' }]` を返します。読み取りだけなので、実行の前後で内容は変わりません。
+
+**実行前と実行後**（`visits`）
+
+| name |
+|---|
+| alice |
+| bob |
+
 ## オプション
 
 | オプション | 内容 |
@@ -63,7 +72,7 @@ export const testClient = new MyTestBotClient(client, { token: disMock.connectio
 2. 環境変数（`DISMOCK_URL`, `DISMOCK_TOKEN`）
 3. `data/discord-mock-state.json`（カレントディレクトリから親へ順に探す）
 
-トークンが一致しない、Mock に接続できない、Bot や DB の準備に失敗したときは、起動エラー（[StartupError](../api/client/class/StartupError.md)）になります。起動エラーはテストの失敗とは区別され、`pnpm app` は Mock も含めて終了します。
+トークンが一致しない、Mock に接続できない、Bot や DB の準備に失敗したときは、起動エラー（[StartupError](../api/client/class/StartupError.md)）になります。起動エラーはテストの失敗とは区別され、`pnpm test` は終了します。`pnpm app` と管理画面から起動したときは、Mock を終了せずに管理画面にエラーを表示します。
 
 ## Bot のトークン
 
@@ -74,6 +83,8 @@ export const testClient = new MyTestBotClient(client, { token: disMock.connectio
 | Mock のトークン | Mock に接続する |
 | なし | `testClient` の `token` を使う。これもなければ起動エラーにする |
 | それ以外（本物のトークンなど） | どこにも送らず、起動エラーにする |
+
+接続するのは 1 つの Bot だけです。他の Bot の起動エラーは、そのプロジェクトへ切り替えたときに分かります。
 
 Mock のトークンは必ず明示します。本物の discord.js と同じように、トークンの指定漏れはエラーになります。`client.login` に引数がないときは、discord.js の既定どおり `DISCORD_TOKEN` の値を判定します。
 

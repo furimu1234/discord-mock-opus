@@ -3,6 +3,9 @@ import { pathToFileURL } from 'node:url';
 import { closeEngines, connection, db, runtime, snapshotEngines, StartupError, type TestClient } from '@dismock/client';
 import { EXIT_STARTUP_FAILURE, MARK_LIST, MARK_READY } from './constants.js';
 import { createSuite, setCurrentSuite, type HookFn, type Suite, type TestCase, type TestContext } from './index.js';
+import { clock } from './clock.js';
+import { mergeCoverage, startCoverage, summarize, takeCoverage, writeCoverage } from './coverage.js';
+import type { CoverageMap } from 'istanbul-lib-coverage';
 
 const DEFAULT_TIMEOUT_MS = 5000;
 const LIVE_DB_INTERVAL_MS = 1000;
@@ -18,7 +21,14 @@ interface RunConfig {
   project?: string;
   /** テストを実行するチャンネル。 */
   channelId?: string;
+  /** 実行の後に、カバレッジを HTML とターミナルに出力する。 */
+  coverage?: boolean;
 }
+
+/** エージェントから Bot のプロセスへの指示。 */
+type AgentMessage =
+  | { type: 'run'; ids: string[]; files: string[]; channelId?: string }
+  | { type: 'save-coverage' };
 
 const config = JSON.parse(process.env.DISMOCK_TEST_CONFIG ?? '{"files":[]}') as RunConfig;
 
@@ -137,7 +147,12 @@ async function runTest(test: TestCase, suite: Suite, title: string, id: string, 
         await hooks((s) => s.beforeEach, chain, local);
         await test.fn!(local);
       } finally {
-        await hooks((s) => s.afterEach, [...chain].reverse(), local);
+        try {
+          await hooks((s) => s.afterEach, [...chain].reverse(), local);
+        } finally {
+          // テストは Bot と同じプロセスで動くので、偽の時刻を次のテストや Bot に残さない。
+          clock.reset();
+        }
       }
     }, timeoutMs);
     totals.passed += 1;
@@ -246,18 +261,33 @@ async function runTests(): Promise<void> {
   console.log(`\nTests: ${totals.failed} failed, ${totals.passed} passed, ${totals.skipped} skipped`);
 }
 
-/** Bot を起動したまま、エージェントの指示でテストを実行する。DB はプロセスが動いている間は残る。 */
+/**
+ * Bot を起動したまま、エージェントの指示でテストを実行する。DB はプロセスが動いている間は残る。
+ * カバレッジは、Bot の起動と、最後に実行したテストの間に実行したコードを合わせたもの。
+ * テストの合間に画面から操作した分は含めない。
+ */
 async function serveBot(testClient: TestClient | undefined): Promise<number> {
   if (!testClient) throw new StartupError('testClient.ts が見つかりません');
   await testClient.serve();
+  const startup = await takeCoverage();
+  let last: CoverageMap | undefined;
   publishLiveDb();
-  process.on('message', (message: { ids: string[]; files: string[]; channelId?: string }) => {
+  process.on('message', (message: AgentMessage) => {
+    if (message.type === 'save-coverage') {
+      const dir = last ? writeCoverage(last) : null;
+      process.send?.({ type: 'coverage-saved', dir });
+      return;
+    }
     config.ids = message.ids;
     config.files = message.files;
     config.channelId = message.channelId;
-    void runTests()
+    void takeCoverage()
+      .then(() => runTests())
+      .then(async () => {
+        last = mergeCoverage(startup, await takeCoverage());
+      })
       .catch((error: unknown) => console.error(error))
-      .finally(() => process.send?.({ done: true }));
+      .finally(() => process.send?.({ type: 'done', coverage: last && summarize(last) }));
   });
   console.log(MARK_READY);
   return new Promise<number>(() => {});
@@ -266,6 +296,8 @@ async function serveBot(testClient: TestClient | undefined): Promise<number> {
 async function main(): Promise<number> {
   process.on('uncaughtException', reportBotError);
   process.on('unhandledRejection', reportBotError);
+  // Bot のコードを読み込む前に記録を始める。一覧の取得では使わない。
+  if (config.mode === 'bot' || config.coverage) await startCoverage();
   if (config.setup) await import(pathToFileURL(resolve(config.setup)).href);
   const testClient = runtime.testClient as TestClient | undefined;
   await testClient?.connect();
@@ -279,6 +311,7 @@ async function main(): Promise<number> {
   }
 
   await runTests();
+  if (config.coverage) writeCoverage(await takeCoverage());
   await testClient?.destroy();
   await closeEngines();
   return totals.failed > 0 ? 1 : 0;

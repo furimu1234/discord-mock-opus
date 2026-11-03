@@ -1,5 +1,6 @@
 import type { StatementSync } from 'node:sqlite';
 import { countPlaceholders, expandParameters, splitStatements, translate } from './mysql-translate.js';
+import { type DrizzleSchema, generateSchemaSql } from './schema-sql.js';
 import { isDuplicateError, SqliteCore, toBindable } from './sqlite-core.js';
 import type { DbTable, Engine, Row, SeedData } from './types.js';
 
@@ -188,6 +189,25 @@ export class MysqlEngine implements Engine {
   query<T = Row>(sql: string, values: unknown[] = []): T[] {
     const [rows] = this.execute(sql, values);
     return (Array.isArray(rows) ? rows : []) as T[];
+  }
+
+  /**
+   * Drizzle のスキーマからテーブルを作成する SQL を生成する。
+   *
+   * @param schema - `import * as schema` の形でまとめたテーブル。
+   * @returns SQL 文の一覧。実行はしない。
+   */
+  schemaSql(schema: DrizzleSchema): Promise<string[]> {
+    return generateSchemaSql(this.kind, schema);
+  }
+
+  /**
+   * Drizzle のスキーマからテーブルを作成する。`setupDb` での使用を想定する。
+   *
+   * @param schema - `import * as schema` の形でまとめたテーブル。
+   */
+  async createTables(schema: DrizzleSchema): Promise<void> {
+    for (const statement of await this.schemaSql(schema)) this.query(statement);
   }
 
   /** テーブル名の一覧を返す。 */

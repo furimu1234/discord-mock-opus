@@ -71,7 +71,7 @@ export const testClient = disMock.testClient({ entry: 'src/index.ts', token: dis
 ```ts
 import { expect, test } from '@dismock/test';
 
-test('ping に応答する', async ({ actor }) => {
+test('ping に応答する', {}, async ({ actor }) => {
   const reply = await actor.command('ping');
   expect(reply.content).toBe('pong');
 });
@@ -91,8 +91,10 @@ pnpm app
 ターミナルに表示された URL をブラウザで開きます。
 
 ```text
-Discord Mock: http://127.0.0.1:6470/#token=...
+dismock: http://127.0.0.1:6470/#token=...
 ```
+
+管理画面の「Bot プロジェクト」で `my-bot` のフォルダーを追加し、「起動」を押します。登録は残りますが、Bot は `pnpm app` のたびにボタンで起動します。
 
 左のレールからテストを開き、`my-bot` のカードをクリックするとテストが実行されます。Bot の応答は開いているチャンネルに表示されます。
 

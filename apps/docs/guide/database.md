@@ -25,26 +25,92 @@ export const testClient = disMock.testClient({
 });
 ```
 
-## 初期データを入れる
+**実行前**: `levels` テーブルはありません。
+
+**実行後**（`levels`、0 行）
+
+| user_id | level |
+|---|---|
+
+Drizzle のスキーマがあれば、SQL を書かずに `createTables` で作成できます。`pg`、`mysql`、`sqlite` で使えます。`pgSchema` のスキーマも一緒に作成します。
 
 ```ts
-test('登録済みのユーザー', {
-  seed: { db: { pg: { levels: [{ user_id: 'a', level: 5 }] } } },
-}, async ({ db }) => {
-  await expect(db.pg().rows('levels')).resolves.toContainEqual({ user_id: 'a', level: 5 });
+import * as schema from '../src/schema';
+
+export const testClient = disMock.testClient({
+  entry: 'src/index.ts',
+  token: disMock.connection().token,
+  setupDb: () => disMock.db.pg().createTables(schema),
 });
 ```
 
-テストの中から `db.pg().seed(...)` を呼び出すこともできます。
+**実行前**: `levels` テーブルはありません。
+
+**実行後**（`levels`、0 行）
+
+| user_id | level |
+|---|---|
+
+実行せずに SQL だけを確認するときは `schemaSql` を使います。
+
+```ts
+const statements = await disMock.db.pg().schemaSql(schema);
+```
+
+読み取りだけなので、DB の内容は変わりません。
+
+| 状態 | `levels` |
+|---|---|
+| 実行前後 | テーブルなし |
+
+SQL の生成には `drizzle-kit` を使います。スキーマの主キーの重複など、本物の DB でエラーになる定義は、テストでも同じエラーになります。
+
+## 初期データを入れる
+
+`seed` は行を追加するだけです。データはテストの間で残るので、同じ主キーの行があるとエラーになります。繰り返し実行するテストでは、先に同じ行を削除します。
+
+```ts
+test('登録済みのユーザー', {}, async ({ db, user }) => {
+  await db.pg().query('DELETE FROM levels WHERE user_id = $1', [user.id]);
+  await db.pg().seed({ levels: [{ user_id: user.id, level: 5 }] });
+  await expect(db.pg().rows('levels')).resolves.toContainEqual({ user_id: user.id, level: 5 });
+});
+```
+
+`alice` でログインしているときの例です。
+
+**実行前**（`levels`）
+
+| user_id | level |
+|---|---|
+| 1000000000000000101 | 2 |
+| 1000000000000000102 | 3 |
+
+**実行後**（`levels`）
+
+| user_id | level |
+|---|---|
+| 1000000000000000102 | 3 |
+| 1000000000000000101 | 5 |
+
+テストのオプションの `seed` でも `seed: { db: { pg: { levels: [...] } } }` の形で投入できます。テストを実行するたびに投入するので、主キーのないテーブルに使います。
 
 ## 内容を確認する
 
 ```ts
 await db.pg().query('SELECT level FROM levels WHERE user_id = $1', [user.id]); // pg は非同期
-db.mysql().query('SELECT * FROM notes WHERE user_id = ?', [user.id]);
-db.sqlite().query('SELECT * FROM tags WHERE name = ?', name as never);
-db.sheets().values(spreadsheetId, 'Sheet1!A1:B2');
+db.mysql().query('SELECT level FROM levels WHERE user_id = ?', [user.id]);
+db.sqlite().query('SELECT level FROM levels WHERE user_id = ?', user.id as never);
+// どれも [{ level: 5 }] を返す
 ```
+
+読み取りだけなので、実行の前後で内容は変わりません。
+
+**実行前と実行後**（`levels`）
+
+| user_id | level |
+|---|---|
+| 1000000000000000101 | 5 |
 
 `pg` の操作だけが `Promise` を返します。詳しくは [PgEngine](../api/client/class/PgEngine.md)、[MysqlEngine](../api/client/class/MysqlEngine.md)、[SqliteEngine](../api/client/class/SqliteEngine.md)、[SheetsEngine](../api/client/class/SheetsEngine.md) を参照してください。
 
@@ -52,9 +118,21 @@ db.sheets().values(spreadsheetId, 'Sheet1!A1:B2');
 
 `seed` は `{ スプレッドシートの ID: { シート名: 行の配列 } }` の形で指定します。
 
+同じシートに投入すると、内容を置き換えます。`values` は値を文字列で返します。
+
 ```ts
 db.sheets().seed({ 'sheet-id': { Sheet1: [['name', 'score'], ['alice', 10]] } });
+db.sheets().values('sheet-id', 'Sheet1!A1:B2'); // [['name', 'score'], ['alice', '10']]
 ```
+
+**実行前**: `sheet-id` のスプレッドシートはありません。
+
+**実行後**（`sheet-id` の `Sheet1`）
+
+| | A | B |
+|---|---|---|
+| 1 | name | score |
+| 2 | alice | 10 |
 
 ## データの寿命
 

@@ -84,6 +84,9 @@ function escapeCode(text) {
     .replace(/[|*_`[\]{}\\]/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
+/** `@example` に DB の内容の表を書くときのコードブロックの言語。Markdown の表としてそのまま出力する。 */
+const TABLE_FENCE = 'table';
+
 function escapeText(text) {
   return text.replace(/[\\`*_[\]<|]/g, '\\$&').replace(/[{}]/g, (char) => `&#${char.charCodeAt(0)};`);
 }
@@ -118,6 +121,7 @@ function renderDoc(node, from) {
     case 'CodeSpan':
       return `\`${node.code}\``;
     case 'FencedCode':
+      if (node.language === TABLE_FENCE) return `${node.code.trimEnd()}\n\n`;
       return `\`\`\`${node.language}\n${node.code.trimEnd()}\n\`\`\`\n\n`;
     case 'LinkTag':
       return renderLink(node, from);

@@ -161,3 +161,12 @@ dismock-users.d.ts
 # Generated API docs
 apps/docs/.api/
 apps/docs/api/
+
+# Uploaded attachments (next to the launcher)
+apps/server/bin/media/
+
+# Distribution builds (pnpm dist)
+release/
+
+# Example bots (kept outside the repository)
+examples/

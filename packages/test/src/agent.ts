@@ -2,8 +2,9 @@ import type { ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { connection, StartupError } from '@dismock/client';
+import { STARTUP_ERROR_PREFIX } from '@dismock/server/constants';
 import { EXIT_STARTUP_FAILURE, MARK_LIST, MARK_READY } from './constants.js';
-import { findSetup, findTests, spawnRunner } from './spawn.js';
+import { findProjectDir, findSetup, findTests, spawnRunner } from './spawn.js';
 
 const RECONNECT_INTERVAL_MS = 500;
 const USER_TYPES_DEBOUNCE_MS = 500;
@@ -17,6 +18,27 @@ interface Project {
 interface AgentEvent {
   type: string;
   data: { project?: string; ids?: string[]; channelId?: string };
+}
+
+/** Bot のプロセスからの返事。 */
+type BotMessage = { type: 'done'; coverage?: unknown } | { type: 'coverage-saved'; dir: string | null };
+
+/** Bot のプロセスから、指定した種類の返事を待つ。プロセスが終了したときは `undefined`。 */
+function reply<T extends BotMessage['type']>(child: ChildProcess, type: T): Promise<Extract<BotMessage, { type: T }> | undefined> {
+  return new Promise((done) => {
+    const onMessage = (message: BotMessage) => {
+      if (message.type !== type) return;
+      child.off('message', onMessage);
+      child.off('exit', onExit);
+      done(message as Extract<BotMessage, { type: T }>);
+    };
+    const onExit = () => {
+      child.off('message', onMessage);
+      done(undefined);
+    };
+    child.on('message', onMessage);
+    child.once('exit', onExit);
+  });
 }
 
 let bot: { project: string; child: ChildProcess } | undefined;
@@ -130,7 +152,7 @@ async function stopBot(): Promise<void> {
 }
 
 function abortStartup(error: Error): never {
-  console.error(`起動エラー: ${error.message}`);
+  console.error(`${STARTUP_ERROR_PREFIX}${error.message}`);
   process.exit(EXIT_STARTUP_FAILURE);
 }
 
@@ -143,16 +165,23 @@ async function switchBot(project: Project): Promise<void> {
 async function runTests(project: Project, ids: string[], channelId?: string): Promise<void> {
   if (bot?.project !== project.name) await switchBot(project);
   const child = bot?.child;
+  let coverage: unknown;
   if (child) {
-    await new Promise<void>((done) => {
-      child.once('message', () => done());
-      child.once('exit', () => done());
-      child.send({ ids, files: findTests(project.dir), channelId });
-    });
+    const done = reply(child, 'done');
+    child.send({ type: 'run', ids, files: findTests(project.dir), channelId });
+    coverage = (await done)?.coverage;
   }
   if (!bot) await switchBot(project);
-  await post('/tests/finish', { activeBot: bot?.project ?? null });
+  await post('/tests/finish', { activeBot: bot?.project ?? null, coverage: coverage ?? null });
   await registerAll(projects);
+}
+
+/** 最後に実行したテストのカバレッジを、Bot のプロセスがプロジェクトの `coverage/` に書き出す。 */
+async function saveCoverage(project: Project): Promise<void> {
+  const child = bot?.project === project.name ? bot.child : undefined;
+  const saved = child ? reply(child, 'coverage-saved') : Promise.resolve(undefined);
+  child?.send({ type: 'save-coverage' });
+  await post('/tests/coverage/saved', { project: project.name, dir: (await saved)?.dir ?? null });
 }
 
 async function subscribe(onEvent: (event: AgentEvent) => void): Promise<void> {
@@ -183,15 +212,15 @@ async function waitForMock(): Promise<void> {
   }
 }
 
-/** 画面からの指示を待ち、テストの実行と Bot の起動を行う。 */
-export async function runAgent(dirs: string[]): Promise<void> {
+/** 画面からの指示を待ち、テストの実行と Bot の起動を行う。`labels` はプロジェクトの表示名で、省略するとフォルダー名を使う。 */
+export async function runAgent(dirs: string[], labels: string[] = []): Promise<void> {
   // エージェントが終了するときは、Bot とテストのプロセスを残さない。
   process.once('exit', () => {
     bot?.child.kill();
   });
   for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => process.exit(0));
 
-  projects = dirs.map((dir) => ({ name: basename(resolve(dir)), dir: resolve(dir) }));
+  projects = dirs.map((dir, index) => ({ name: labels[index] ?? basename(resolve(dir)), dir: findProjectDir(resolve(dir)) }));
   const find = (name?: string) => projects.find((project) => project.name === name);
 
   // 実行とBotの切り替えが重ならないよう、指示は順番に処理する。
@@ -209,7 +238,9 @@ export async function runAgent(dirs: string[]): Promise<void> {
     const project = find(event.data.project);
     if (event.type === 'TEST_RUN' && project) enqueue(() => runTests(project, event.data.ids ?? [], event.data.channelId));
     if (event.type === 'BOT_SELECT' && project) enqueue(() => switchBot(project).then(() => registerAll(projects)));
+    if (event.type === 'BOT_STOP') enqueue(() => stopBot().then(() => registerAll(projects)));
     if (event.type === 'TEST_RELOAD') enqueue(() => registerAll(projects));
+    if (event.type === 'COVERAGE_SAVE' && project) enqueue(() => saveCoverage(project));
   };
 
   // Mock が再起動すると、Bot も起動し直して DB を空にする。

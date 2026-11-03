@@ -25,27 +25,28 @@ Discord Bot のテストを自動化するための Discord モックです。Bo
 nix-shell
 pnpm install
 pnpm build       # apps と packages をビルドする
+pnpm watch       # ビルドしてから変更を監視し、dist を自動で更新する
 pnpm web         # Mock を起動する（既定は 127.0.0.1:6470）
 pnpm test        # 起動中の Mock に testClient を接続し、テスト画面からの実行を待つ
-pnpm app         # Mock と testClient の両方を起動する。Ctrl+C で終了する
+pnpm app         # ビルドして Mock を起動する。Bot は管理画面のボタンで起動する。Ctrl+C で終了する
 pnpm test:run    # 起動中の Mock に対して全テストを実行して終了する
 pnpm typecheck   # 型チェック
 pnpm docs:dev    # ドキュメントサイトを開発サーバーで表示する
 pnpm docs:build  # ドキュメントサイトを apps/docs/.vitepress/dist に生成する
 ```
 
-`pnpm web` と `pnpm app` は、ブラウザで開く URL をターミナルに表示します。起動のたびにトークン以外のデータは消去されます。`pnpm test` と `pnpm test:run` には起動中の Mock が必要です。`pnpm test:run` は testClient と Bot が重ならないよう、`pnpm web` だけを起動した状態で実行してください。テストごとの初期化はないので、テストはデータが空であることを前提にしないでください。
+`pnpm web` と `pnpm app` は、ブラウザで開く URL をターミナルに表示します。起動のたびに、画面で作ったものと初期データ以外（テストで作ったもの、メッセージなど）は消去されます。`pnpm test` と `pnpm test:run` には起動中の Mock が必要です。`pnpm test:run` は testClient と Bot が重ならないよう、`pnpm web` だけを起動した状態で実行してください。テストごとの初期化はないので、テストはデータが空であることを前提にしないでください。
 
 トークンは `data/discord-mock-state.json` に保存され、画面の URL にも含まれます。`data/` はコミットせず、URL も共有しないでください。
 
-`examples/*` のテストは `packages/*/dist` を参照します。`apps` や `packages` を変更したら、ビルドしてからテストしてください。
+`examples/*` のテストは `packages/*/dist` を参照します。`apps` や `packages` を変更したら、ビルドしてからテストしてください。`pnpm watch` は `dist` を更新するだけなので、起動中の Mock と Bot には再起動するまで反映されません。画面の変更は、ブラウザの再読み込みで反映されます。
 
 ## 現在の状態
 
 実装済みのものと未実装のものは次のとおりです。
 
 - 実装済み: REST API と Gateway のエミュレータ、`testClient`、テストランナーとテスト DSL、インメモリ DB（pg、mysql、sqlite、スプレッドシート）、Web UI（テスト画面、管理画面、DB Studio）
-- 未実装: 音声の送受信（`VOICE_SERVER_UPDATE` と Voice Gateway）、DB Studio での編集、Python 用ライブラリ
+- 未実装: ダミーユーザーからの音声の送信、DB Studio での編集、Python 用ライブラリ
 
 ## 構成
 
@@ -59,7 +60,7 @@ pnpm docs:build  # ドキュメントサイトを apps/docs/.vitepress/dist に�
 | `examples/sample-bot` | | Client を公開しない Bot。全機能の動作確認を兼ねる |
 | `examples/exported-client-bot` | | Client を公開する Bot と CommonJS の動作確認 |
 | `examples/leveling-bot` | | レベリング Bot。PostgreSQL と drizzle を使う実用的な例 |
-| `examples/music-bot` | | 音楽 Bot。`@discordjs/voice` と yt-dlp で YouTube の音声を再生する。yt-dlp はこのプロジェクトの依存（`youtube-dl-exec`）で、インストール時に取得する |
+| `examples/music-bot` | | 音楽 Bot。`@discordjs/voice` と yt-dlp で、yt-dlp が対応しているサイトの音声を再生し、操作パネルのボタンで停止、一時停止、速度、音量を変更できる。yt-dlp はこのプロジェクトの依存（`youtube-dl-exec`）で、インストール時に取得する |
 
 ## 絶対に守ること
 

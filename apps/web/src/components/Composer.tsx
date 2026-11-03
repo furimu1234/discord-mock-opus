@@ -1,7 +1,13 @@
+import { Permission } from '@dismock/server/permissions';
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { api, type Json } from '../api';
 import { displayName } from './Avatar';
 import { PlusIcon } from './Icons';
+import { hasChannelPermission } from '../permissions';
+import { Select } from './Select';
+import { ContextMenu, pointAnchor, type Anchor } from './ContextMenu';
+import { PollDialog } from './Poll';
+import { encodeFiles, UploadList, useUploads } from './Uploads';
 
 const OptionType = { subcommand: 1, group: 2, boolean: 5, user: 6, channel: 7, role: 8, mentionable: 9 };
 
@@ -34,6 +40,9 @@ function expandCommands(commands: Json[]): CommandChoice[] {
 
 interface ComposerProps {
   channelId: string | null;
+  /** 返信先のメッセージ。 */
+  replyTo?: Json | null;
+  onCancelReply?: () => void;
   placeholder: string;
   state: Json;
   members: Json[];
@@ -52,10 +61,10 @@ function OptionInput({ option, value, onChange, state, members, guildId }: {
   guildId?: string;
 }) {
   const select = (items: { id: string; label: string }[]) => (
-    <select value={value} onChange={(event) => onChange(event.target.value)}>
-      <option value="">選択</option>
-      {items.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-    </select>
+    <Select label={option.name} value={value} onChange={onChange} options={[
+      { value: '', label: '選択' },
+      ...items.map((item) => ({ value: item.id, label: item.label })),
+    ]} />
   );
   if (option.choices?.length) {
     return select(option.choices.map((c: Json) => ({ id: String(c.value), label: c.name })));
@@ -83,8 +92,12 @@ function convertOption(option: Json, value: string): unknown {
   return value;
 }
 
-export function Composer({ channelId, placeholder, state, members, activeUser, resolveChannel, onResult, onError }: ComposerProps) {
+export function Composer({ channelId, placeholder, state, members, activeUser, resolveChannel, replyTo, onCancelReply, onResult, onError }: ComposerProps) {
   const [text, setText] = useState('');
+  const uploads = useUploads(onError);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [plusMenu, setPlusMenu] = useState<Anchor | null>(null);
+  const [creatingPoll, setCreatingPoll] = useState(false);
   const [command, setCommand] = useState<CommandChoice | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [highlight, setHighlight] = useState(0);
@@ -92,6 +105,7 @@ export function Composer({ channelId, placeholder, state, members, activeUser, r
   const input = useRef<HTMLInputElement>(null);
   const channel = channelId ? state.channels[channelId] : undefined;
   const guildId = channel?.guild_id as string | undefined;
+  const canSend = !guildId || !activeUser || hasChannelPermission(state, state.guilds[guildId], channel!, activeUser.id, Permission.sendMessages);
 
   const commands = useMemo(() => expandCommands(state.commands), [state.commands]);
   const mentionQuery = /(?:^|\s)@([^\s@]*)$/.exec(text)?.[1];
@@ -159,10 +173,13 @@ export function Composer({ channelId, placeholder, state, members, activeUser, r
 
   const sendMessage = async () => {
     const content = text.trim();
-    if (!content) return;
+    if (!content && uploads.files.length === 0) return;
     const target = channelId ?? (await resolveChannel());
+    const encoded = await encodeFiles(uploads.files);
     setText('');
-    await api.post('/messages', { userId: activeUser?.id, channelId: target, content: encodeMentions(content) });
+    uploads.clear();
+    onCancelReply?.();
+    await api.post('/messages', { userId: activeUser?.id, channelId: target, content: encodeMentions(content), replyTo: replyTo?.id, files: encoded });
   };
 
   const submit = () => {
@@ -218,11 +235,44 @@ export function Composer({ channelId, placeholder, state, members, activeUser, r
           <button className="button secondary" onClick={() => setCommand(null)}>取消</button>
         </div>
       ) : (
-        <div className="composer-box">
-          <span className="composer-plus"><PlusIcon /></span>
-          <input ref={input} value={text} placeholder={placeholder} disabled={!activeUser} aria-label="メッセージを入力"
+        <div className={replyTo ? 'composer-box replying' : 'composer-box'}>
+          {replyTo && (
+            <div className="reply-bar">
+              <span><strong>{displayName(replyTo.author)}</strong> に返信</span>
+              <button aria-label="返信を取り消す" title="返信を取り消す" onClick={onCancelReply}>×</button>
+            </div>
+          )}
+          <UploadList files={uploads.files} onRemove={uploads.remove} />
+          <button className="composer-plus" aria-label="ファイルや投票を追加" aria-haspopup="menu" disabled={!activeUser || !canSend}
+            onClick={(event) => {
+              const { left, top } = event.currentTarget.getBoundingClientRect();
+              setPlusMenu(pointAnchor(left, top));
+            }}>
+            <PlusIcon />
+          </button>
+          <input ref={fileInput} type="file" multiple hidden aria-label="ファイルをアップロード"
+            onChange={(event) => {
+              uploads.add([...(event.target.files ?? [])]);
+              event.target.value = '';
+            }} />
+          <input ref={input} onPaste={uploads.onPaste} value={text} placeholder={canSend ? placeholder : 'このチャンネルではメッセージを送信できません'}
+            disabled={!activeUser || !canSend} aria-label="メッセージを入力"
             onChange={(event) => { setText(event.target.value); setHighlight(0); }} onKeyDown={onKeyDown} />
         </div>
+      )}
+      {plusMenu && (
+        <ContextMenu anchor={plusMenu} label="追加するもの" onClose={() => setPlusMenu(null)} entries={[
+          { label: 'ファイルをアップロード', onSelect: () => fileInput.current?.click() },
+          { label: '投票を作成', onSelect: () => setCreatingPoll(true) },
+        ]} />
+      )}
+      {creatingPoll && (
+        <PollDialog onClose={() => setCreatingPoll(false)} onSubmit={(poll) => {
+          void (async () => {
+            const target = channelId ?? (await resolveChannel());
+            await api.post('/messages', { userId: activeUser?.id, channelId: target, content: '', poll });
+          })().catch((error: Error) => onError(error.message));
+        }} />
       )}
     </div>
   );

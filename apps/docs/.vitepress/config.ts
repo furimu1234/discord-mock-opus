@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig, type DefaultTheme } from 'vitepress';
+import { LEGAL_NOTICE } from '../../server/src/constants.ts';
 
 const REPOSITORY = 'https://github.com/furimu1234/discord-mock-opus';
 const base = process.env.DOCS_BASE ?? '/';
@@ -32,6 +33,10 @@ const guide: DefaultTheme.SidebarItem[] = [
       { text: 'コマンド', link: '/guide/cli' },
       { text: 'セキュリティ', link: '/guide/security' },
     ],
+  },
+  {
+    text: 'リファレンス',
+    items: [{ text: 'Discord API の対応状況', link: '/guide/discord-api' }],
   },
 ];
 
@@ -72,6 +77,6 @@ export default defineConfig({
     sidebarMenuLabel: 'メニュー',
     returnToTopLabel: 'ページの先頭へ',
     langMenuLabel: '言語を変更',
-    footer: { message: 'dismock は Discord Inc. とは関係のない非公式のプロジェクトです。' },
+    footer: { message: LEGAL_NOTICE },
   },
 });

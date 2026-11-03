@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, type Json } from '../api';
+import { CoverageDialog } from './CoverageDialog';
 import { ChevronIcon, FolderIcon } from './Icons';
+import { Select } from './Select';
 
 const STATUS_LABELS: Record<string, string> = {
   ready: 'READY',
@@ -60,6 +62,12 @@ function buildCategories(tests: Json[]): Category[] {
     category!.tests.push(test);
   }
   return roots;
+}
+
+/** 選択中のプロジェクト。未選択のときは接続中の Bot のプロジェクトを表示する。 */
+export function selectedProject(tests: Json | null, projectName: string | null): Json | undefined {
+  const projects = (tests?.projects ?? []) as Json[];
+  return projects.find((p) => p.name === (projectName ?? tests?.activeBot)) ?? projects[0];
 }
 
 function categoryTests(category: Category): Json[] {
@@ -160,7 +168,8 @@ function CategorySection({ category, depth, results, running, collapsed, onToggl
 
 function TestList({ tests, projectName, onProject, channelId, compact = false, onError, collapsed, onToggleCategory, onOpenDb, onOpenRun }: TestListProps) {
   const projects = (tests?.projects ?? []) as Json[];
-  const project = (projects.find((p) => p.name === projectName) ?? projects[0]) as Json;
+  const projectOptions = projects.map((p) => ({ value: p.name as string, label: p.name as string }));
+  const project = selectedProject(tests, projectName);
   const results = (tests?.results?.[project?.name] ?? {}) as Record<string, Json>;
   const running = Boolean(tests?.runningProject);
   const cases = (project?.tests ?? []) as Json[];
@@ -172,14 +181,31 @@ function TestList({ tests, projectName, onProject, channelId, compact = false, o
     return total;
   }, {});
 
-  const run = (ids: string[]) => {
+  const selectProject = (name: string) => {
+    onProject(name);
+    api.post('/tests/bot', { project: name }).catch((error: Error) => onError(error.message));
+  };
+
+  /** 全件の実行を始めてから終わるまでの状態。終わったらカバレッジの保存を尋ねる。 */
+  const [runAll, setRunAll] = useState<'requested' | 'running' | null>(null);
+  const [coverageOpen, setCoverageOpen] = useState(false);
+  useEffect(() => {
+    if (runAll === 'requested' && running) setRunAll('running');
+    if (runAll === 'running' && !running) {
+      setRunAll(null);
+      if (tests?.coverage) setCoverageOpen(true);
+    }
+  }, [runAll, running, tests?.coverage]);
+
+  const run = (ids: string[], all = false) => {
     api
       .post('/tests/run', { project: project?.name, ids, channelId: channelId ?? undefined })
+      .then(() => setRunAll(all ? 'requested' : null))
       .catch((error: Error) => onError(error.message));
   };
 
   if (!tests?.agentConnected) {
-    return <div className="notice">testClient が起動していません。`pnpm test` を実行してください。</div>;
+    return <div className="notice">testClient が起動していません。管理画面の Bot プロジェクトから起動するか、`pnpm test` を実行してください。</div>;
   }
 
   return (
@@ -187,17 +213,7 @@ function TestList({ tests, projectName, onProject, channelId, compact = false, o
       <div className="test-controls">
         <label className="inline-field">
           <span>プロジェクト</span>
-          <select aria-label="プロジェクト" value={project?.name ?? ''} onChange={(event) => onProject(event.target.value)}>
-            {projects.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
-          </select>
-        </label>
-        <label className="inline-field">
-          <span>接続する Bot</span>
-          <select aria-label="接続する Bot" value={tests.activeBot ?? ''} disabled={running}
-            onChange={(event) => api.post('/tests/bot', { project: event.target.value }).catch((error: Error) => onError(error.message))}>
-            {!tests.activeBot && <option value="">なし</option>}
-            {projects.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
-          </select>
+          <Select label="プロジェクト" value={project?.name ?? ''} disabled={running} onChange={selectProject} options={projectOptions} />
         </label>
         <button className="button secondary" disabled={running}
           onClick={() => api.post('/tests/reload').catch((error: Error) => onError(error.message))}>一覧を更新</button>
@@ -213,7 +229,7 @@ function TestList({ tests, projectName, onProject, channelId, compact = false, o
             </>
           )}
         </span>
-        <button className="run-all" disabled={running || runnable.length === 0} onClick={() => run(runnable)}>
+        <button className="run-all" disabled={running || runnable.length === 0} onClick={() => run(runnable, true)}>
           {running ? '実行中…' : '▶ 全て実行'}
         </button>
       </div>
@@ -228,6 +244,9 @@ function TestList({ tests, projectName, onProject, channelId, compact = false, o
               onOpenRun={() => onOpenRun(results[test.id]?.runId, test.id)} />
           )} />
       ))}
+      {coverageOpen && tests?.coverage && (
+        <CoverageDialog coverage={tests.coverage} onClose={() => setCoverageOpen(false)} onError={onError} />
+      )}
     </div>
   );
 }

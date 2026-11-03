@@ -1,10 +1,15 @@
-import type { Actor, TestClient, TestSeed } from '@dismock/client';
+import type { Actor, TestClient, TestSeed, Traffic } from '@dismock/client';
 import { db } from '@dismock/client';
-import type { DEFAULT_USERS } from '@dismock/server/constants';
+
+export { watchModal } from '@dismock/client';import type { DEFAULT_USERS } from '@dismock/server/constants';
 
 export { expect } from './expect.js';
-export type { Matchers, PollApi, PollOptions } from './expect.js';
+export type { Matchers, PollApi, PollOptions, StableOptions } from './expect.js';
 export { fn, spyOn } from 'jest-mock';
+export { store } from './store.js';
+export { clock } from './clock.js';
+export type { Clock } from './clock.js';
+export type { TestStore } from './store.js';
 
 /**
  * 管理画面で追加したダミーユーザー（ユーザー名と ID）。
@@ -42,8 +47,21 @@ export interface TestContext {
   channel: Record<string, any>;
   /** `seed` で追加したデータ。 */
   seeded: Record<string, any>;
+  /**
+   * テストが始まってからの Bot の通信。テストごとに新しく始まる。
+   * モーダルを開いたか、何が選ばれたか、どのメッセージを送ったかを確かめられる。
+   */
+  traffic: Traffic;
   /** インメモリ DB。 */
   db: typeof db;
+}
+
+declare global {
+  /**
+   * `=>` を入力する前は `async ({})` が関数の呼び出しとして解析される。
+   * この間もテスト関数の引数を補完するための宣言で、実体はない。
+   */
+  function async(context: Partial<TestContext>): void;
 }
 
 /** テストのオプション。 */
@@ -136,7 +154,7 @@ export interface DescribeApi extends SuiteDefinition {
  * ```ts
  * describe('レベル', () => {
  *   describe('XP', () => {
- *     test('発言すると増える', async ({ actor }) => {
+ *     test('発言すると増える', {}, async ({ actor }) => {
  *       await actor.sendMessage('hello');
  *     });
  *   });
@@ -148,19 +166,14 @@ export const describe: DescribeApi = Object.assign((name: string, body: () => vo
   only: (name: string, body: () => void) => defineSuite(name, body, 'only'),
 });
 
-function defineTest(name: string, second: TestOptions | TestFn | undefined, third: TestFn | undefined, mode: Mode): void {
-  const options = typeof second === 'object' ? second : {};
-  const fn = typeof second === 'function' ? second : third;
+function defineTest(name: string, options: TestOptions, fn: TestFn | undefined, mode: Mode): void {
+  // テストは型を検査せずに実行するので、指定漏れはここで検出する。
+  if (typeof options !== 'object') throw new Error(`@dismock/test: ${name}: オプションを第 2 引数に指定してください`);
   currentSuite().tests.push({ name, fn, options, mode });
 }
 
 /** テストを定義する関数。 */
 export interface TestDefinition {
-  /**
-   * @param name - テストの名前。
-   * @param fn - テスト関数。
-   */
-  (name: string, fn: TestFn): void;
   /**
    * @param name - テストの名前。
    * @param options - テストのオプション。
@@ -190,8 +203,8 @@ export interface TestApi extends TestDefinition {
 
 const modeTest =
   (mode: Mode): TestDefinition =>
-  (name: string, second: TestOptions | TestFn, third?: TestFn) =>
-    defineTest(name, second, third, mode);
+  (name, options, fn) =>
+    defineTest(name, options, fn, mode);
 
 function each<T>(cases: readonly T[]): EachDefinition<T> {
   return (name, fn, options = {}) => {
@@ -207,7 +220,7 @@ function each<T>(cases: readonly T[]): EachDefinition<T> {
  *
  * @example
  * ```ts
- * test('発言すると XP が増える', async ({ actor }) => {
+ * test('発言すると XP が増える', {}, async ({ actor }) => {
  *   await actor.sendMessage('hello');
  * });
  *
@@ -219,7 +232,7 @@ function each<T>(cases: readonly T[]): EachDefinition<T> {
 export const test: TestApi = Object.assign(modeTest('run'), {
   skip: modeTest('skip'),
   only: modeTest('only'),
-  todo: (name: string) => defineTest(name, undefined, undefined, 'todo'),
+  todo: (name: string) => defineTest(name, {}, undefined, 'todo'),
   each,
 });
 

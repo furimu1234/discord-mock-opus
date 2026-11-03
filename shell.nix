@@ -47,6 +47,8 @@ pkgs.mkShell {
     pnpm
     pkgs.python3
     pkgs.ffmpeg-headless
+    # 配布用のビルド（pnpm dist）で、Mac の実行ファイルに署名する。
+    pkgs.rcodesign
   ];
 
   shellHook = ''

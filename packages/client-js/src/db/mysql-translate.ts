@@ -216,7 +216,7 @@ function translateCreateTable(masked: string): string {
   }
   const columns = autoIncrementColumn
     ? output.filter((line) => {
-        const primary = /^PRIMARY\s+KEY\s*\(\s*`?(\w+)`?\s*\)/i.exec(line);
+        const primary = /^(?:CONSTRAINT\s+\S+\s+)?PRIMARY\s+KEY\s*\(\s*`?(\w+)`?\s*\)/i.exec(line);
         return primary?.[1] !== autoIncrementColumn;
       })
     : output;

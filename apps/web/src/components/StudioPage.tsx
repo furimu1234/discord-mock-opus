@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, type Json } from '../api';
+import { Select } from './Select';
 
 const PAGE_SIZE = 50;
 
@@ -24,6 +25,12 @@ const ENGINE_LABELS: Record<string, string> = {
   sqlite: 'SQLite',
   sheets: 'スプレッドシート',
 };
+
+/** PostgreSQL の既定のスキーマ。あれば最初に選ぶ。 */
+const DEFAULT_SCHEMA = 'public';
+
+/** スキーマの名前を除いたテーブル名。 */
+const shortName = (table: Json) => (table.schema && table.name.startsWith(`${table.schema}.`) ? table.name.slice(table.schema.length + 1) : table.name);
 
 function formatCell(value: unknown): string {
   if (typeof value === 'object') return JSON.stringify(value);
@@ -56,22 +63,48 @@ export function StudioPage({ tests, source, onSource, onError }: StudioPageProps
   const [filter, setFilter] = useState('');
   const [sort, setSort] = useState<Sort | null>(null);
   const [page, setPage] = useState(0);
+  /** DB の種類ごとに選んだスキーマ。 */
+  const [schemas, setSchemas] = useState<Record<string, string>>({});
 
   const sources = testSources(tests);
   const liveUpdatedAt = tests?.liveDb?.updatedAt as string | undefined;
   const sourceKey = source ? `${source.runId}\n${source.id}` : '';
 
+  /** 更新ボタンを押した回数。押すたびに読み直す。 */
+  const [reloads, setReloads] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+  // 画面を開いたとき、表示するデータを変えたとき、接続中の Bot の DB が変わったとき、更新ボタンで読み直す。
   useEffect(() => {
     const query = source ? `?run=${source.runId}&id=${encodeURIComponent(source.id)}` : '';
-    api.get(`/db${query}`).then(setSnapshot, (error: Error) => onError(error.message));
-  }, [source, liveUpdatedAt]);
+    setLoading(true);
+    api
+      .get(`/db${query}`)
+      .then(setSnapshot, (error: Error) => onError(error.message))
+      .finally(() => setLoading(false));
+  }, [source, liveUpdatedAt, reloads]);
+
+  /** スキーマのある DB（PostgreSQL）の、スキーマの一覧と選択中のスキーマ。 */
+  const schemaChoices = useMemo(() => {
+    const choices: Record<string, { names: string[]; selected: string }> = {};
+    for (const engine of snapshot) {
+      const names = [...new Set((engine.tables as Json[]).flatMap((table) => (table.schema ? [table.schema as string] : [])))];
+      if (names.length === 0) continue;
+      const chosen = schemas[engine.kind];
+      const selected = chosen && names.includes(chosen) ? chosen : names.includes(DEFAULT_SCHEMA) ? DEFAULT_SCHEMA : names[0]!;
+      choices[engine.kind] = { names, selected };
+    }
+    return choices;
+  }, [snapshot, schemas]);
 
   const tables = useMemo(
     () =>
       snapshot.flatMap((engine) =>
-        (engine.tables as Json[]).map((table): Json => ({ ...table, kind: engine.kind, key: `${engine.kind}/${table.name}` })),
+        (engine.tables as Json[])
+          .filter((table) => !table.schema || table.schema === schemaChoices[engine.kind]?.selected)
+          .map((table): Json => ({ ...table, kind: engine.kind, key: `${engine.kind}/${table.name}` })),
       ),
-    [snapshot],
+    [snapshot, schemaChoices],
   );
   const table = tables.find((t) => t.key === tableKey) ?? tables.find((t) => t.rows.length > 0) ?? tables[0];
 
@@ -113,30 +146,44 @@ export function StudioPage({ tests, source, onSource, onError }: StudioPageProps
         <div className="studio-source">
           <label>
             表示するデータ
-            <select aria-label="表示するデータ" value={sourceKey} onChange={(event) => selectSource(event.target.value)}>
-              <option value="">接続中の Bot{tests?.liveDb ? `（${tests.liveDb.project}）` : ''}</option>
-              {source && !sources.some((s) => s.runId === source.runId && s.id === source.id) && (
-                <option value={sourceKey}>{source.label}</option>
-              )}
-              {sources.map((s) => <option key={`${s.runId}\n${s.id}`} value={`${s.runId}\n${s.id}`}>{s.label}</option>)}
-            </select>
+            <Select label="表示するデータ" value={sourceKey} onChange={selectSource} options={[
+              { value: '', label: `接続中の Bot${tests?.liveDb ? `（${tests.liveDb.project}）` : ''}` },
+              ...(source && !sources.some((s) => s.runId === source.runId && s.id === source.id)
+                ? [{ value: sourceKey, label: source.label }]
+                : []),
+              ...sources.map((s) => ({ value: `${s.runId}\n${s.id}`, label: s.label })),
+            ]} />
           </label>
+          {source && <small className="studio-note">テストの終了時の DB です。その後の変更は「接続中の Bot」で見られます。</small>}
+          <button className="button secondary studio-reload" disabled={loading} onClick={() => setReloads(reloads + 1)}>
+            {loading ? '更新中…' : '更新'}
+          </button>
         </div>
         <div className="studio-tables">
-          {snapshot.map((engine) => (
-            <div key={engine.kind}>
-              <div className="studio-engine">{ENGINE_LABELS[engine.kind] ?? engine.kind}</div>
-              {(engine.tables as Json[]).map((t) => {
-                const key = `${engine.kind}/${t.name}`;
-                return (
-                  <button key={key} className={key === table?.key ? 'studio-table active' : 'studio-table'} title={t.name}
-                    onClick={() => { setTableKey(key); setSort(null); }}>
-                    <span>{t.name}</span><small>{t.total}</small>
+          {snapshot.map((engine) => {
+            const choice = schemaChoices[engine.kind];
+            return (
+              <div key={engine.kind}>
+                <div className="studio-engine">{ENGINE_LABELS[engine.kind] ?? engine.kind}</div>
+                {choice && (
+                  <div className="studio-schema">
+                    <Select label="スキーマ" value={choice.selected} options={choice.names.map((name) => ({ value: name, label: name }))}
+                      onChange={(name) => {
+                        setSchemas({ ...schemas, [engine.kind]: name });
+                        setTableKey(null);
+                        setSort(null);
+                      }} />
+                  </div>
+                )}
+                {tables.filter((t) => t.kind === engine.kind).map((t) => (
+                  <button key={t.key} className={t.key === table?.key ? 'studio-table active' : 'studio-table'} title={t.name}
+                    onClick={() => { setTableKey(t.key); setSort(null); }}>
+                    <span>{shortName(t)}</span><small>{t.total}</small>
                   </button>
-                );
-              })}
-            </div>
-          ))}
+                ))}
+              </div>
+            );
+          })}
         </div>
       </aside>
       <section className="studio-main">

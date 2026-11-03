@@ -8,11 +8,17 @@
     "./shims/*": { "default": "./dist/shims/*.js" }
   },
   "files": ["dist"],
-  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
   "dependencies": {
     "@dismock/server": "workspace:*",
-    "@electric-sql/pglite": "^0.5.14"
+    "@electric-sql/pglite": "^0.5.14",
+    "drizzle-kit": "^0.31.11",
+    "ws": "^8.22.1"
   },
   "peerDependencies": { "discord.js": "^14" },
-  "devDependencies": { "discord.js": "^14.28.0" }
+  "devDependencies": { "@types/ws": "^8.18.2", "discord.js": "^14.28.0" }
 }

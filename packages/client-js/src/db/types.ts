@@ -16,8 +16,10 @@ export interface DbColumn {
 
 /** DB Studio に送るテーブルの内容。 */
 export interface DbTable {
-  /** テーブル名。 */
+  /** テーブル名。PostgreSQL の `public` 以外のスキーマのテーブルは `スキーマ.テーブル`。 */
   name: string;
+  /** PostgreSQL のスキーマ。ほかの DB にはない。 */
+  schema?: string;
   /** カラムの一覧。 */
   columns: DbColumn[];
   /** 先頭の行。 */

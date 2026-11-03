@@ -2,6 +2,8 @@ import { snowflake, type Json, type Store } from './store.js';
 
 const MAX_RUNS = 100;
 const MAX_TRAFFIC_PER_TEST = 500;
+/** テストのコードから読める、直近の Bot の通信の件数。 */
+const MAX_TRAFFIC_FEED = 2000;
 const DM_REDACTED = '[DM の内容は表示できません]';
 
 export type TestStatus = 'queued' | 'running' | 'passed' | 'failed';
@@ -37,6 +39,25 @@ export type TrafficEntry =
   | { kind: 'rest'; at: string; method: string; path: string; status: number; request: unknown; response: unknown }
   | { kind: 'gateway'; at: string; event: string; data: unknown };
 
+/** `/api/mock/traffic` の結果。`cursor` を次の `after` に渡すと、それより後の通信だけを受け取れる。 */
+export interface TrafficFeed {
+  /** 最後に記録した通信の位置。 */
+  cursor: number;
+  /** `after` より後に記録した通信。古い順。 */
+  entries: TrafficEntry[];
+}
+
+/** 最後に実行したテストのカバレッジ。要約は Bot のプロセスが作り、HTML は保存を選んだときに書き出す。 */
+export interface CoverageReport {
+  project: string;
+  runId: string | null;
+  summary: Json;
+  /** 保存の指示を出して、書き出しを待っている。 */
+  saving: boolean;
+  /** 書き出した HTML のディレクトリ。 */
+  savedDir: string | null;
+}
+
 interface RunTest extends TestResult {
   id: string;
   name: string;
@@ -55,7 +76,7 @@ interface TestRun {
 
 /**
  * 画面とエージェントの間でテストの一覧と結果を仲介する。
- * テストを実行するのはエージェントで、Mock はプロセスを起動しない。
+ * テストを実行するのはエージェントで、Mock は Bot やテストのプロセスを直接起動しない。
  * 実行の履歴はメモリ上に保持し、Mock を再起動すると消える。
  */
 export class TestRegistry {
@@ -64,12 +85,17 @@ export class TestRegistry {
   runningProject: string | null = null;
   activeBot: string | null = null;
   agentConnected = false;
+  /** 最後に実行したテストのカバレッジ。 */
+  coverage: CoverageReport | null = null;
   /** 接続中の Bot の DB。 */
   private liveDb: { project: string; db: Json[]; updatedAt: string } | null = null;
   /** 新しい順に並べた実行の履歴。 */
   private runs: TestRun[] = [];
   /** Bot の通信を記録する、実行中のテスト。 */
   private activeTest: RunTest | null = null;
+  /** 実行の方法によらず記録する、直近の Bot の通信。`seq` は記録した順の番号。 */
+  private feed: { seq: number; entry: TrafficEntry }[] = [];
+  private seq = 0;
 
   constructor(private readonly store: Store) {
     store.on('dispatch', (event: string, data: Json) => this.recordGateway(event, data));
@@ -80,9 +106,9 @@ export class TestRegistry {
   }
 
   snapshot(): Json {
-    const { projects, results, runningProject, activeBot, agentConnected } = this;
+    const { projects, results, runningProject, activeBot, agentConnected, coverage } = this;
     const liveDb = this.liveDb && { project: this.liveDb.project, updatedAt: this.liveDb.updatedAt };
-    return { projects, results, runningProject, activeBot, agentConnected, liveDb };
+    return { projects, results, runningProject, activeBot, agentConnected, liveDb, coverage };
   }
 
   register(projects: TestProject[], activeBot: string | null): void {
@@ -146,8 +172,10 @@ export class TestRegistry {
     this.notify();
   }
 
-  finish(activeBot: string | null): void {
+  finish(activeBot: string | null, coverage: Json | null = null): void {
     const project = this.runningProject;
+    const runId = this.runs.find((r) => r.finishedAt === null)?.id ?? null;
+    this.coverage = project && coverage ? { project, runId, summary: coverage, saving: false, savedDir: null } : null;
     for (const result of Object.values(this.results[project ?? ''] ?? {})) {
       if (result.status === 'queued' || result.status === 'running') {
         result.status = 'failed';
@@ -178,10 +206,19 @@ export class TestRegistry {
   }
 
   private record(entry: TrafficEntry): void {
-    const { activeTest } = this;
-    if (!activeTest || activeTest.traffic.length >= MAX_TRAFFIC_PER_TEST) return;
     // メッセージは後から編集されるため、この時点の内容を残す。
-    activeTest.traffic.push(structuredClone(entry));
+    const snapshot = structuredClone(entry);
+    this.seq += 1;
+    this.feed.push({ seq: this.seq, entry: snapshot });
+    if (this.feed.length > MAX_TRAFFIC_FEED) this.feed.shift();
+    const { activeTest } = this;
+    if (activeTest && activeTest.traffic.length < MAX_TRAFFIC_PER_TEST) activeTest.traffic.push(snapshot);
+  }
+
+  /** `after` より後に記録した通信を返す。`after` を省略すると、今の位置だけを返す。 */
+  traffic(after: number | null): TrafficFeed {
+    const entries = after === null ? [] : this.feed.filter((item) => item.seq > after).map((item) => item.entry);
+    return { cursor: this.seq, entries };
   }
 
   /** Bot が呼び出した REST API を記録する。DM の内容は宛先のログインでしか見られないため伏せる。 */
@@ -235,6 +272,32 @@ export class TestRegistry {
   selectBot(project: string): void {
     if (this.runningProject) throw Object.assign(new Error('テストの実行中です'), { status: 409 });
     this.store.emit('ui', 'BOT_SELECT', { project });
+  }
+
+  /** 接続中の Bot だけを止める。エージェントは残るので、テストの一覧は消えない。 */
+  stopBot(): void {
+    if (this.runningProject) throw Object.assign(new Error('テストの実行中です'), { status: 409 });
+    this.activeBot = null;
+    this.liveDb = null;
+    this.notify();
+    this.store.emit('ui', 'BOT_STOP', {});
+  }
+
+  /** カバレッジの HTML の書き出しを、エージェントに指示する。書き出すのは Bot のプロセス。 */
+  saveCoverage(): void {
+    const { coverage } = this;
+    if (!coverage) throw Object.assign(new Error('保存できるカバレッジがありません'), { status: 404 });
+    if (!this.agentConnected) throw Object.assign(new Error('testClient が起動していません'), { status: 409 });
+    coverage.saving = true;
+    this.notify();
+    this.store.emit('ui', 'COVERAGE_SAVE', { project: coverage.project });
+  }
+
+  coverageSaved(project: string, dir: string | null): void {
+    if (this.coverage?.project !== project) return;
+    this.coverage.saving = false;
+    this.coverage.savedDir = dir;
+    this.notify();
   }
 
   reload(): void {

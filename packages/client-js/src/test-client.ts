@@ -1,13 +1,15 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Json, SeedChannel, SeedGuild, SeedInput, SeedRole, SeedUser } from '@dismock/server';
-import { Actor } from './actor.js';
+import type { Json, SeedChannel, SeedGuild, SeedInput, SeedRole, SeedUser, VoiceStatus } from '@dismock/server';
+import type { APIMessage } from 'discord.js';
+import { Actor, type MockMessage } from './actor.js';
 import { connection, StartupError, verifyConnection } from './connection.js';
 import { db } from './db/index.js';
 import type { SheetSeed } from './db/sheets.js';
 import type { SeedData } from './db/types.js';
 import { MockApi } from './mock-api.js';
 import { runtime } from './runtime.js';
+import { Traffic } from './traffic.js';
 
 /** Bot が公開している Client の最小限の形。discord.js の Client を想定している。 */
 export interface BotClient {
@@ -89,9 +91,12 @@ export interface Prepared {
   guild: Json;
   channel: Json;
   seeded: Json;
+  /** テストが始まってからの Bot の通信。 */
+  traffic: Traffic;
 }
 
 const READY_TIMEOUT_MS = 5000;
+const LOGIN_POLL_MS = 5;
 const TEXT_CHANNEL = 0;
 const LOGIN_USER = 'login';
 
@@ -118,6 +123,16 @@ function isOptions(value: unknown): value is TestClientOptions {
  * }
  *
  * export const testClient = new MyTestBotClient(client, { token: disMock.connection().token });
+ * ```
+ *
+ * `greetings` を読み取るだけなので、実行の前後で内容は変わらない。
+ *
+ * 実行前と実行後（`greetings`）
+ *
+ * ```table
+ * | name |
+ * |---|
+ * | alice |
  * ```
  */
 export class TestClient {
@@ -204,20 +219,45 @@ export class TestClient {
       await bot.login();
     }
     await this.waitUntilReady(bot);
+    await this.waitForCommands();
   }
 
   private async loadEntry(): Promise<void> {
     if (this.bot) return;
     await import(pathToFileURL(resolve(this.options.entry!)).href);
-    this.bot = runtime.loginClients.at(-1) as BotClient | undefined;
-    if (!this.bot) throw new Error(`dismock: ${this.options.entry} は client.login を呼び出していません`);
+    this.bot = await this.waitForLogin();
+  }
+
+  /** Sapphire は `ready` の後でコマンドを登録するので、完了を待ってからテストを始める。 */
+  private async waitForCommands(): Promise<void> {
+    if (!runtime.commandsRegistered) return;
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`dismock: コマンドの登録が ${READY_TIMEOUT_MS}ms 以内に完了しませんでした`)),
+        READY_TIMEOUT_MS,
+      );
+    });
+    await Promise.race([runtime.commandsRegistered, timeout]).finally(() => clearTimeout(timer));
+  }
+
+  /** Sapphire のように、エントリーの読み込みが終わった後で login する Bot を待つ。 */
+  private async waitForLogin(): Promise<BotClient> {
+    const deadline = Date.now() + READY_TIMEOUT_MS;
+    while (Date.now() <= deadline) {
+      if (runtime.loginError) throw runtime.loginError;
+      const client = runtime.loginClients.at(-1) as BotClient | undefined;
+      if (client) return client;
+      await new Promise((done) => setTimeout(done, LOGIN_POLL_MS));
+    }
+    throw new Error(`dismock: ${this.options.entry} は ${READY_TIMEOUT_MS}ms 以内に client.login を呼び出しませんでした`);
   }
 
   private async waitUntilReady(bot: BotClient): Promise<void> {
     const deadline = Date.now() + READY_TIMEOUT_MS;
     while (!bot.isReady()) {
       if (Date.now() > deadline) throw new Error(`dismock: Bot が ${READY_TIMEOUT_MS}ms 以内に準備完了になりませんでした`);
-      await new Promise((done) => setTimeout(done, 5));
+      await new Promise((done) => setTimeout(done, LOGIN_POLL_MS));
     }
   }
 
@@ -262,13 +302,17 @@ export class TestClient {
     await api.switchUser(user.id);
     if (options.label) await api.mark(channel.id, options.label);
     this.defaultChannelId = channel.id;
+    const guild = (await api.state()).guilds[guildId];
+    // 準備の通信を含めないよう、最後に今の位置を記録する。テストごとに記録し直すので、前のテストの通信も含まない。
+    const { cursor } = await api.traffic();
     return {
       user,
       actor: this.as(user),
       actors: users.map((item) => this.as(item)),
-      guild: (await api.state()).guilds[guildId],
+      guild,
       channel,
       seeded,
+      traffic: new Traffic(async () => (await api.traffic(cursor)).entries),
     };
   }
 
@@ -361,11 +405,21 @@ export class TestClient {
   }
 
   /**
+   * Bot のボイスチャンネルへの接続状態を返す。
+   *
+   * @param guildId - サーバーの ID。
+   * @returns 接続状態。Bot が接続していなければ `null`。
+   */
+  async voiceStatus(guildId: string): Promise<VoiceStatus | null> {
+    return (await this.mock()).voiceStatus(guildId);
+  }
+
+  /**
    * メッセージの履歴を返す。DM は {@link Actor.dms} で取得する。
    *
    * @param channelId - チャンネルの ID。省略するとすべてのチャンネル。
    */
-  async messages(channelId?: string): Promise<Json[]> {
+  async messages(channelId?: string): Promise<MockMessage[]> {
     return (await this.mock()).messages(channelId);
   }
 
@@ -374,11 +428,29 @@ export class TestClient {
    *
    * @param channelId - チャンネルの ID。省略するとすべてのチャンネル。
    */
-  async botMessages(channelId?: string): Promise<Json[]> {
+  async botMessages(channelId?: string): Promise<MockMessage[]> {
     const state = await (await this.mock()).state();
     const messages = await this.messages(channelId);
     return messages.filter((message) => message.author.id === state.botUserId);
   }
+
+  /**
+   * インタラクションの応答に続けて送信されたフォローアップを、古い順に返す。
+   *
+   * @param reply - {@link Actor.command} などの応答。
+   * @returns フォローアップのメッセージ。
+   *
+   * @example
+   * ```ts
+   * const reply = await actor.command('report');
+   * await expect.poll(() => bot.followUps(reply)).toHaveLength(1);
+   * ```
+   */
+  async followUps(reply: Pick<APIMessage, 'id' | 'channel_id'>): Promise<MockMessage[]> {
+    const messages = await this.botMessages(reply.channel_id);
+    return messages.filter((message) => message.interaction_metadata?.original_response_message_id === reply.id);
+  }
+
 
   /** Mock の状態を返す。DM の内容は含まない。 */
   async state(): Promise<Json> {

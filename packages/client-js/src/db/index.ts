@@ -8,6 +8,7 @@ import type { DbTable, Engine, EngineKind, Row } from './types.js';
 export { MysqlEngine, PgEngine, SheetsEngine, SqliteEngine };
 export type { MysqlField, MysqlQueryOptions } from './mysql.js';
 export type { PgQueryOptions, PgResult } from './pg.js';
+export type { DrizzleSchema } from './schema-sql.js';
 export type { DbColumn, DbTable, Engine, EngineKind, Row, SeedData } from './types.js';
 export type { CellValue, SheetSeed, ValueOptions } from './sheets.js';
 export type { SqliteCore } from './sqlite-core.js';
@@ -28,6 +29,21 @@ function engine<T extends Engine>(kind: EngineKind, create: () => T): T {
  * ```ts
  * await db.pg().seed({ users: [{ id: 1, name: 'alice' }] });
  * const rows = await db.pg().rows('users');
+ * ```
+ *
+ * 実行前（`users`、0 行）
+ *
+ * ```table
+ * | id | name |
+ * |---|---|
+ * ```
+ *
+ * 実行後（`users`）
+ *
+ * ```table
+ * | id | name |
+ * |---|---|
+ * | 1 | alice |
  * ```
  */
 export const db = {

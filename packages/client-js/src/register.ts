@@ -1,3 +1,4 @@
+import { type EventEmitter, once } from 'node:events';
 import { createRequire, registerHooks } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { connection, StartupError } from './connection.js';
@@ -43,6 +44,12 @@ const TOKEN_MISSING =
 const TOKEN_MISMATCH =
   'client.login に渡されたトークンが Mock のトークンと一致しません。トークンは送信していません。Mock のトークンに切り替えてください';
 
+/** Mock の Voice Gateway は TLS を使わないので、`@discordjs/voice` の接続先を差し替える。 */
+const VOICE_PACKAGE = /[\\/]@discordjs[\\/]voice[\\/]/;
+
+/** Sapphire がコマンドの登録を終えたときのイベント。 */
+const SAPPHIRE_COMMANDS_REGISTERED = 'applicationCommandRegistriesRegistered';
+
 const patched = new Set<string>();
 
 function patchRest({ REST }: ModuleExports): void {
@@ -57,6 +64,11 @@ function patchRest({ REST }: ModuleExports): void {
   } as never;
 }
 
+function rejectLogin(message: string): never {
+  runtime.loginError = new StartupError(message);
+  throw runtime.loginError;
+}
+
 function patchClient({ Client }: ModuleExports): void {
   if (!Client) return;
   const { login } = Client.prototype;
@@ -64,9 +76,12 @@ function patchClient({ Client }: ModuleExports): void {
   Client.prototype.login = async function (this: DiscordClientLike, botToken: string | null = this.token) {
     const { url, token } = connection();
     const specified = botToken || runtime.overrides.token;
-    if (!specified) throw new StartupError(TOKEN_MISSING);
-    if (specified.replace(TOKEN_PREFIX, '') !== token) throw new StartupError(TOKEN_MISMATCH);
+    if (!specified) rejectLogin(TOKEN_MISSING);
+    if (specified.replace(TOKEN_PREFIX, '') !== token) rejectLogin(TOKEN_MISMATCH);
     runtime.loginClients.push(this);
+    if ('stores' in this) {
+      runtime.commandsRegistered = once(this as unknown as EventEmitter, SAPPHIRE_COMMANDS_REGISTERED);
+    }
     this.rest.options.api = `${url}/api`;
     return login.call(this, token);
   };
@@ -84,6 +99,7 @@ registerHooks({
   resolve(specifier, context, nextResolve) {
     const redirect = REDIRECTS[specifier];
     if (redirect) return { url: redirect, shortCircuit: true };
+    if (specifier === 'ws' && VOICE_PACKAGE.test(context.parentURL ?? '')) return { url: shim('ws'), shortCircuit: true };
     const resolved = nextResolve(specifier, context);
     if (specifier === 'discord.js' || specifier === '@discordjs/rest') patchModule(resolved.url);
     return resolved;

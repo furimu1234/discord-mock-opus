@@ -1,3 +1,4 @@
+import { type DrizzleSchema, generateSchemaSql } from './schema-sql.js';
 import { SqliteCore } from './sqlite-core.js';
 import type { DbTable, Engine, Row, SeedData } from './types.js';
 
@@ -14,6 +15,25 @@ export class SqliteEngine implements Engine {
     if (statement.columns().length > 0) return statement.all(...values) as T[];
     statement.run(...values);
     return [];
+  }
+
+  /**
+   * Drizzle のスキーマからテーブルを作成する SQL を生成する。
+   *
+   * @param schema - `import * as schema` の形でまとめたテーブル。
+   * @returns SQL 文の一覧。実行はしない。
+   */
+  schemaSql(schema: DrizzleSchema): Promise<string[]> {
+    return generateSchemaSql(this.kind, schema);
+  }
+
+  /**
+   * Drizzle のスキーマからテーブルを作成する。`setupDb` での使用を想定する。
+   *
+   * @param schema - `import * as schema` の形でまとめたテーブル。
+   */
+  async createTables(schema: DrizzleSchema): Promise<void> {
+    for (const statement of await this.schemaSql(schema)) this.query(statement);
   }
 
   /** テーブル名の一覧を返す。 */

@@ -11,6 +11,10 @@ export interface Runtime {
   engines: Map<EngineKind, Engine>;
   /** login を呼んだ本物の Client。`entry` で読み込んだ Bot の取得に使う。 */
   loginClients: unknown[];
+  /** login を拒否した理由。Bot が例外を捕まえても、起動エラーとして扱う。 */
+  loginError?: Error;
+  /** Sapphire のように `ready` の後でコマンドを登録する Bot の、登録の完了。 */
+  commandsRegistered?: Promise<unknown>;
   testClient?: unknown;
 }
 

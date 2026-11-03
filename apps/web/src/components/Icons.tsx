@@ -1,3 +1,4 @@
+import { ChannelType, isThreadType } from '@dismock/server/constants';
 import type { ReactNode } from 'react';
 
 function Icon({ size = 20, children }: { size?: number; children: ReactNode }) {
@@ -19,6 +20,54 @@ export const SpeakerIcon = () => (
     <path d="M12 4v16l-5-4H3V8h4l5-4Zm3.5 3.5a6 6 0 0 1 0 9l-1.4-1.4a4 4 0 0 0 0-6.2l1.4-1.4Z" />
   </Icon>
 );
+
+const MegaphoneIcon = () => (
+  <Icon>
+    <path d="M20 4v13l-8-3H9l1 5H7l-1-5H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h8l8-3Z" />
+  </Icon>
+);
+
+const StageIcon = () => (
+  <Icon>
+    <path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3ZM6 10v1a6 6 0 0 0 12 0v-1h2v1a8 8 0 0 1-7 7.900V21h-2v-2.100A8 8 0 0 1 4 11v-1h2Z" />
+  </Icon>
+);
+
+const ForumIcon = () => (
+  <Icon>
+    <path d="M4 4h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9l-4 3v-3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm16 4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-1v2l-3-2h-5v-2h5a4 4 0 0 0 4-4V8Z" />
+  </Icon>
+);
+
+const MediaIcon = () => (
+  <Icon>
+    <path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm1 11h14l-4-6-3 4-2-2-5 4ZM8 8a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3Z" />
+  </Icon>
+);
+
+export const ThreadIcon = () => (
+  <Icon>
+    <path d="M5 3h2v9a2 2 0 0 0 2 2h7.200l-2.600-2.600L15 10l5 5-5 5-1.400-1.400 2.600-2.600H9a4 4 0 0 1-4-4V3Z" />
+  </Icon>
+);
+
+const DirectoryIcon = () => (
+  <Icon>
+    <path d="M4 3h16v18H4V3Zm2 2v14h12V5H6Zm2 2h8v2H8V7Zm0 4h8v2H8v-2Zm0 4h5v2H8v-2Z" />
+  </Icon>
+);
+
+/** チャンネルの種類のアイコン。 */
+export function ChannelIcon({ type }: { type: number }) {
+  if (isThreadType(type)) return <ThreadIcon />;
+  if (type === ChannelType.voice) return <SpeakerIcon />;
+  if (type === ChannelType.announcement) return <MegaphoneIcon />;
+  if (type === ChannelType.stage) return <StageIcon />;
+  if (type === ChannelType.forum) return <ForumIcon />;
+  if (type === ChannelType.media) return <MediaIcon />;
+  if (type === ChannelType.directory) return <DirectoryIcon />;
+  return <HashIcon />;
+}
 
 export const ChatIcon = () => (
   <Icon size={26}>
@@ -77,6 +126,24 @@ export const ChevronIcon = () => (
 export const HangUpIcon = () => (
   <Icon>
     <path d="M12 9c3.600 0 6.900 1 9.500 2.900.5.400.6 1 .3 1.500l-1.800 2.600c-.3.500-.9.600-1.400.3l-2.800-1.800c-.4-.2-.6-.7-.5-1.100l.4-1.800a12 12 0 0 0-7.400 0l.4 1.800c.1.400-.1.900-.5 1.100l-2.800 1.800c-.5.300-1.100.2-1.400-.3l-1.800-2.600c-.3-.5-.2-1.100.3-1.500C5.100 10 8.400 9 12 9Z" />
+  </Icon>
+);
+
+export const ReplyIcon = () => (
+  <Icon>
+    <path d="M10 5v4c6 0 10 3 11 10-2.500-3.500-6-5-11-5v4L3 11l7-6Z" />
+  </Icon>
+);
+
+export const PencilIcon = () => (
+  <Icon>
+    <path d="M15.500 4.500a2.100 2.100 0 0 1 3 3L8 18l-4 1 1-4L15.500 4.500Z" />
+  </Icon>
+);
+
+export const MoreIcon = () => (
+  <Icon>
+    <path d="M6 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm6 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm6 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z" />
   </Icon>
 );
 

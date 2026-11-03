@@ -1,6 +1,6 @@
 import type { Json } from '../api';
 
-const COLORS = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55c', '#faa61a', '#00a8fc'];
+const COLORS = ['#0f766e', '#2f9e44', '#e67700', '#c2255c', '#c92a2a', '#1971c2', '#7048e8', '#0c8599'];
 
 export function colorOf(id = '0'): string {
   let hash = 0;
