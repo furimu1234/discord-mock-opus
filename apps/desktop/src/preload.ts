@@ -18,6 +18,7 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(DesktopChannel.updateProgress, handler);
     return () => ipcRenderer.removeListener(DesktopChannel.updateProgress, handler);
   },
+  openCoverage: (dir) => ipcRenderer.invoke(DesktopChannel.openCoverage, dir),
 };
 
 contextBridge.exposeInMainWorld(DESKTOP_BRIDGE_KEY, bridge);

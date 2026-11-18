@@ -1,7 +1,7 @@
 // 配布版のウインドウ。Mock を子プロセスで起動し、画面とターミナルの 2 つのウインドウで表示する。
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { app, BrowserWindow, ipcMain, Menu, screen, session, shell, type Display, type IpcMainInvokeEvent } from 'electron';
 import { MOCK_STOP_MESSAGE, STATE_FILE_NAME, URL_LINE_PREFIX } from '@dismock/server/constants';
 import { DesktopChannel, type DesktopDisplay, type DesktopUpdate, type TerminalChunk } from './bridge.js';
@@ -32,6 +32,11 @@ const serverArgs = dataDirIndex >= 0 ? userArgs.filter((_, index) => index !== d
 const layoutFile = join(dataDir, 'data', LAYOUT_FILE_NAME);
 /** アップデートのダウンロードと展開に使うフォルダー。 */
 const updateDir = join(dataDir, 'data', 'update');
+/** Mock に渡す、画面から保存したカバレッジの書き出し先の引数。 */
+const COVERAGE_OPTION = '--coverage';
+/** 画面から保存したカバレッジの HTML。Mock がプロジェクトごとのフォルダーに分ける。引数で指定されたら、それを使う（後ろの指定が優先）。 */
+const coverageIndex = serverArgs.lastIndexOf(COVERAGE_OPTION);
+const coverageDir = resolve((coverageIndex >= 0 ? serverArgs[coverageIndex + 1] : undefined) ?? join(dataDir, 'coverage'));
 /** 配布版のフォルダー。Windows の exe はこの中にある。 */
 const installDir = dirname(process.execPath);
 const target = releaseTarget(process.platform, process.arch);
@@ -77,7 +82,7 @@ function writeTerminal(data: string): void {
 function startMock(onUrl: (url: string) => void) {
   const child = spawn(
     process.execPath,
-    [join(__dirname, 'server/dismock-server.cjs'), '--web', join(__dirname, 'web'), '--data', join(dataDir, 'data', STATE_FILE_NAME), '--media', join(dataDir, 'media'), ...serverArgs],
+    [join(__dirname, 'server/dismock-server.cjs'), '--web', join(__dirname, 'web'), '--data', join(dataDir, 'data', STATE_FILE_NAME), '--media', join(dataDir, 'media'), COVERAGE_OPTION, coverageDir, ...serverArgs],
     {
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', FORCE_COLOR: '1', PATH: loginShellPath() },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
@@ -271,6 +276,14 @@ function handleIpc(): void {
       updating = false;
       throw error;
     }
+  });
+  ipcMain.handle(DesktopChannel.openCoverage, async (event, dir: unknown) => {
+    if (!fromMain(event) || typeof dir !== 'string') return;
+    // 画面が開けるのは、カバレッジの保存先の中の HTML だけ。
+    const file = join(resolve(dir), 'index.html');
+    if (!file.startsWith(coverageDir + sep) || !existsSync(file)) throw new Error('カバレッジの HTML がありません');
+    const error = await shell.openPath(file);
+    if (error) throw new Error(`カバレッジの HTML を開けません: ${error}`);
   });
   ipcMain.handle(DesktopChannel.terminalHistory, (event): TerminalChunk => ({
     data: terminal && event.sender === terminal.webContents ? terminalHistory : '',

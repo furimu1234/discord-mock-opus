@@ -1,5 +1,9 @@
+import { DESKTOP_BRIDGE_KEY, type DesktopBridge } from '@dismock/desktop/bridge';
 import { useEffect, useState } from 'react';
 import { api, type Json } from '../api';
+
+/** 配布版のウインドウで開いたときだけある、ウインドウの操作。ブラウザでは `undefined`。 */
+const desktop = (window as unknown as Partial<Record<string, DesktopBridge>>)[DESKTOP_BRIDGE_KEY];
 
 /** 要約に並べる指標。istanbul の要約の項目名と表示名。 */
 const METRICS = [
@@ -21,7 +25,8 @@ function Percent({ value }: { value: number }) {
 
 /**
  * 全件のテストの後に、カバレッジを保存するかを選ぶ。
- * 保存すると、Bot のプロセスが HTML をプロジェクトの `coverage/` に書き出し、表をターミナルに出力する。
+ * 保存すると、Bot のプロセスが HTML を作って表をターミナルに出力し、Mock が HTML を Mock のフォルダーの `coverage/` に書き出す。
+ * 配布版では、書き出した HTML を既定のブラウザで開ける。
  */
 export function CoverageDialog({ coverage, onClose, onError }: { coverage: Json; onClose: () => void; onError: (message: string) => void }) {
   const [requested, setRequested] = useState(false);
@@ -49,7 +54,7 @@ export function CoverageDialog({ coverage, onClose, onError }: { coverage: Json;
       <div className="dialog wide coverage-dialog" role="dialog" aria-label="カバレッジ" onClick={(event) => event.stopPropagation()}>
         <h2>カバレッジを保存しますか？</h2>
         <p className="dialog-message">
-          {coverage.project} の全件のテストで実行した Bot のコードの割合です。保存すると、HTML をプロジェクトの coverage フォルダーに書き出し、表をターミナルに出力します。
+          {coverage.project} の全件のテストで実行した Bot のコードの割合です。保存すると、HTML を dismock と同じ場所の coverage フォルダーに書き出し、表をターミナルに出力します。
         </p>
         <div className="coverage-total">
           {METRICS.map(([key, label]) => (
@@ -85,11 +90,18 @@ export function CoverageDialog({ coverage, onClose, onError }: { coverage: Json;
         <div className="dialog-actions">
           {saved && (
             <span className="dialog-note">
-              {coverage.savedDir ? `${coverage.savedDir}/index.html に保存し、ターミナルに出力しました` : '保存できませんでした。Bot が停止しています'}
+              {coverage.savedDir ? `${coverage.savedDir} に保存し、ターミナルに出力しました` : `保存できませんでした: ${coverage.saveError ?? 'Bot が停止しています'}`}
             </span>
           )}
           {saved ? (
-            <button className="button" autoFocus onClick={onClose}>閉じる</button>
+            <>
+              {desktop && coverage.savedDir && (
+                <button type="button" className="button secondary" onClick={() => desktop.openCoverage(coverage.savedDir).catch((error: Error) => onError(error.message))}>
+                  HTML を開く
+                </button>
+              )}
+              <button className="button" autoFocus onClick={onClose}>閉じる</button>
+            </>
           ) : (
             <>
               <button className="button secondary" autoFocus onClick={onClose}>保存しない</button>

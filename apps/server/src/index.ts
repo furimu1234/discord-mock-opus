@@ -53,6 +53,8 @@ export interface MockServerOptions {
   seedDefaults?: boolean;
   /** 添付ファイルを保存するディレクトリ。省略するとメモリーに保持する。 */
   mediaDir?: string;
+  /** 画面から保存したカバレッジの HTML を書き出すディレクトリ。省略すると画面から保存できない。 */
+  coverageDir?: string;
 }
 
 export interface MockServer {
@@ -77,7 +79,7 @@ export async function startServer(options: MockServerOptions = {}): Promise<Mock
     updatePresence: (userId, presence) => presences.updatePresence(userId, presence),
   });
   const interactions = new Interactions(store, (event, data) => store.emit('dispatch', event, data), () => gateway.hasBot);
-  const tests = new TestRegistry(store);
+  const tests = new TestRegistry(store, options.coverageDir);
   const projects = new ProjectLauncher(store, tests, host, () => url);
   const moderation = new Moderation(store);
   const integrations = new Integrations(store, (guildId, userId) => moderation.isBanned(guildId, userId));

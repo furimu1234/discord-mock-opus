@@ -1,3 +1,5 @@
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, resolve, sep } from 'node:path';
 import { snowflake, type Json, type Store } from './store.js';
 
 const MAX_RUNS = 100;
@@ -56,6 +58,42 @@ export interface CoverageReport {
   saving: boolean;
   /** 書き出した HTML のディレクトリ。 */
   savedDir: string | null;
+  /** 書き出せなかった理由。 */
+  saveError: string | null;
+}
+
+/** フォルダーの名前に使えない記号。Windows の決まりに合わせる。制御文字も使えない。 */
+const UNSAFE_FILE_SYMBOLS = '<>:"/\\|?*';
+const FIRST_PRINTABLE_CHAR = 0x20;
+const isUnsafeFileChar = (char: string) => UNSAFE_FILE_SYMBOLS.includes(char) || char.charCodeAt(0) < FIRST_PRINTABLE_CHAR;
+
+/** プロジェクトの名前を、カバレッジのフォルダーの名前にする。 */
+export const coverageFolderName = (project: string) =>
+  [...project]
+    .map((char) => (isUnsafeFileChar(char) ? '_' : char))
+    .join('')
+    .replace(/^[. ]+|[. ]+$/g, '') || 'project';
+
+/**
+ * Bot のプロセスが作ったカバレッジの HTML を、`root` の下のプロジェクトのフォルダーに書き出す。
+ * 前回の HTML は消してから書く。`files` は `/` 区切りの相対パスと base64 の中身。書き出したフォルダーを返す。
+ */
+export function writeCoverageFiles(root: string, project: string, files: Record<string, string>): string {
+  const dir = resolve(root, coverageFolderName(project));
+  const targets = Object.entries(files).map(([path, content]) => {
+    const parts = path.split('/');
+    const target = resolve(dir, ...parts);
+    if (parts.some((part) => !part || part === '.' || part === '..' || [...part].some(isUnsafeFileChar)) || !target.startsWith(dir + sep)) {
+      throw Object.assign(new Error(`カバレッジのファイルの名前が正しくありません: ${path}`), { status: 400 });
+    }
+    return { target, content };
+  });
+  rmSync(dir, { recursive: true, force: true });
+  for (const { target, content } of targets) {
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, Buffer.from(content, 'base64'));
+  }
+  return dir;
 }
 
 interface RunTest extends TestResult {
@@ -97,7 +135,11 @@ export class TestRegistry {
   private feed: { seq: number; entry: TrafficEntry }[] = [];
   private seq = 0;
 
-  constructor(private readonly store: Store) {
+  /** `coverageDir` は、画面から保存したカバレッジの HTML の書き出し先。 */
+  constructor(
+    private readonly store: Store,
+    private readonly coverageDir?: string,
+  ) {
     store.on('dispatch', (event: string, data: Json) => this.recordGateway(event, data));
   }
 
@@ -175,7 +217,7 @@ export class TestRegistry {
   finish(activeBot: string | null, coverage: Json | null = null): void {
     const project = this.runningProject;
     const runId = this.runs.find((r) => r.finishedAt === null)?.id ?? null;
-    this.coverage = project && coverage ? { project, runId, summary: coverage, saving: false, savedDir: null } : null;
+    this.coverage = project && coverage ? { project, runId, summary: coverage, saving: false, savedDir: null, saveError: null } : null;
     for (const result of Object.values(this.results[project ?? ''] ?? {})) {
       if (result.status === 'queued' || result.status === 'running') {
         result.status = 'failed';
@@ -283,21 +325,39 @@ export class TestRegistry {
     this.store.emit('ui', 'BOT_STOP', {});
   }
 
-  /** カバレッジの HTML の書き出しを、エージェントに指示する。書き出すのは Bot のプロセス。 */
+  /** カバレッジの HTML を Bot のプロセスに作らせる。届いたファイルは `coverageSaved` で Mock が書き出す。 */
   saveCoverage(): void {
     const { coverage } = this;
     if (!coverage) throw Object.assign(new Error('保存できるカバレッジがありません'), { status: 404 });
+    if (!this.coverageDir) throw Object.assign(new Error('カバレッジの保存先がありません'), { status: 409 });
     if (!this.agentConnected) throw Object.assign(new Error('testClient が起動していません'), { status: 409 });
     coverage.saving = true;
     this.notify();
     this.store.emit('ui', 'COVERAGE_SAVE', { project: coverage.project });
   }
 
-  coverageSaved(project: string, dir: string | null): void {
-    if (this.coverage?.project !== project) return;
-    this.coverage.saving = false;
-    this.coverage.savedDir = dir;
-    this.notify();
+  /**
+   * Bot のプロセスが作った HTML を書き出す。`files` が `null` なら Bot が停止していて作れなかった。
+   * `legacyDir` は、HTML を自分でプロジェクトに書き出す古い `@dismock/test`（0.1.0）が送る、書き出した場所。
+   */
+  coverageSaved(project: string, files: Record<string, string> | null, legacyDir: string | null = null): void {
+    const { coverage, coverageDir } = this;
+    if (coverage?.project !== project || !coverageDir) return;
+    coverage.saving = false;
+    coverage.savedDir = null;
+    coverage.saveError = null;
+    try {
+      if (!files && legacyDir) {
+        coverage.savedDir = legacyDir;
+        return;
+      }
+      if (!files) throw new Error('Bot が停止しています');
+      coverage.savedDir = writeCoverageFiles(coverageDir, project, files);
+    } catch (error) {
+      coverage.saveError = (error as Error).message;
+    } finally {
+      this.notify();
+    }
   }
 
   reload(): void {
