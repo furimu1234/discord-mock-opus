@@ -3,9 +3,10 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { RELEASE_NAME } from '../apps/desktop/src/release.ts';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const NAME = 'dismock';
+export const NAME = RELEASE_NAME;
 const SERVER = join(ROOT, 'apps/server');
 const DESKTOP = join(ROOT, 'apps/desktop');
 const WEB_DIST = join(ROOT, 'apps/web/dist');
