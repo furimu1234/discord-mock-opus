@@ -30,10 +30,20 @@ export function FolderDialog({ initialPath, onSelect, onClose }: {
   }, [initialPath, onClose]);
 
   const folders = (listing?.folders ?? []) as Json[];
+  const roots = (listing?.roots ?? []) as Json[];
   return (
     <div className="overlay" onClick={onClose}>
       <div className="dialog folder-dialog" role="dialog" aria-label="フォルダーの選択" onClick={(event) => event.stopPropagation()}>
         <h2>フォルダーの選択</h2>
+        {roots.length > 0 && (
+          <div className="folder-roots">
+            {roots.map((root) => (
+              <button key={root.path} className={`folder-root${listing?.path === root.path ? ' active' : ''}`} onClick={() => browse(root.path)}>
+                {root.name}
+              </button>
+            ))}
+          </div>
+        )}
         <code className="folder-path">{listing?.path}</code>
         {error && <div className="notice">{error}</div>}
         <ul className="folder-list">

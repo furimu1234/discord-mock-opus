@@ -451,6 +451,10 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; backgr
 .dialog { width: 440px; max-width: calc(100vw - 32px); background: var(--bg-chat); border: 1px solid var(--hairline-strong); border-radius: var(--radius-l); box-shadow: var(--shadow-l); padding: 20px; animation: materialize 0.25s var(--ease); }
 .dialog h2 { font-size: 20px; color: var(--text-strong); margin-bottom: 16px; }
 .folder-dialog { width: min(560px, calc(100vw - 32px)); }
+.folder-roots { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.folder-root { padding: 3px 10px; font-size: 13px; color: var(--text); background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: var(--radius-s); }
+.folder-root:hover, .folder-root:focus-visible { border-color: var(--text-muted); }
+.folder-root.active { border-color: var(--brand); }
 .folder-path { display: block; margin-bottom: 8px; color: var(--text-muted); overflow-wrap: anywhere; }
 .folder-list { list-style: none; margin: 0 0 12px; padding: 0; height: 320px; max-height: 50vh; overflow-y: auto; border: 1px solid var(--hairline); border-radius: var(--radius-m); }
 .folder-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 12px; color: var(--text); text-align: left; overflow-wrap: anywhere; }
