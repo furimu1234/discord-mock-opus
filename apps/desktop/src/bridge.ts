@@ -12,6 +12,9 @@ export const DesktopChannel = {
   moveToDisplay: 'desktop:move-to-display',
   resetPosition: 'desktop:reset-position',
   displaysChanged: 'desktop:displays-changed',
+  checkUpdate: 'desktop:check-update',
+  installUpdate: 'desktop:install-update',
+  updateProgress: 'desktop:update-progress',
   terminalData: 'terminal:data',
   terminalHistory: 'terminal:history',
 } as const;
@@ -27,6 +30,26 @@ export interface DesktopDisplay {
   current: boolean;
 }
 
+/** GitHub の Releases の最新版と、今の版との比較。 */
+export interface DesktopUpdate {
+  current: string;
+  latest: string;
+  /** 最新版が今の版より新しい。 */
+  available: boolean;
+  /** Release の説明（Markdown）。 */
+  notes: string;
+  /** Release のページ。 */
+  url: string;
+  /** この PC の配布物があり、画面から差し替えられる（Windows だけ）。それ以外は Release のページから入手する。 */
+  installable: boolean;
+}
+
+/** アップデートのダウンロードの進み具合（バイト）。 */
+export interface DesktopUpdateProgress {
+  received: number;
+  total: number;
+}
+
 /** 画面から使う、ウインドウの操作。 */
 export interface DesktopBridge {
   displays(): Promise<DesktopDisplay[]>;
@@ -36,6 +59,12 @@ export interface DesktopBridge {
   resetPosition(): Promise<void>;
   /** ディスプレイの増減や、ウインドウの移動を知らせる。戻り値で解除する。 */
   onDisplaysChanged(listener: () => void): () => void;
+  /** GitHub の Releases に最新版を問い合わせる。押したときだけ呼び、自動では問い合わせない。 */
+  checkUpdate(): Promise<DesktopUpdate>;
+  /** 最新版をダウンロードして照合し、dismock を終了して差し替え、起動し直す。 */
+  installUpdate(): Promise<void>;
+  /** ダウンロードの進み具合を知らせる。戻り値で解除する。 */
+  onUpdateProgress(listener: (progress: DesktopUpdateProgress) => void): () => void;
 }
 
 /**

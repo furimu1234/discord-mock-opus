@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { packager } from '@electron/packager';
+import { RELEASE_TARGETS as TARGETS, releaseArchiveName } from '../apps/desktop/src/release.ts';
 import { buildDesktopApp, ELECTRON_VERSION, NAME, ROOT, VERSION } from './desktop-app.mjs';
 
 const SERVER = join(ROOT, 'apps/server');
@@ -18,16 +19,6 @@ const NODE_VERSION = process.version;
 const NODE_MAJOR = process.versions.node.split('.')[0];
 const NODE_DIST = `https://nodejs.org/dist/${NODE_VERSION}`;
 const NODE_CACHE = join(ROOT, '.local/node-dist', NODE_VERSION);
-
-/** `os` は配布の種類、`platform` と `arch` は Electron の配布の名前。 */
-const TARGETS = {
-  'linux-x64': { os: 'linux', platform: 'linux', arch: 'x64' },
-  'linux-arm64': { os: 'linux', platform: 'linux', arch: 'arm64' },
-  'windows-x64': { os: 'windows', platform: 'win32', arch: 'x64' },
-  'windows-arm64': { os: 'windows', platform: 'win32', arch: 'arm64' },
-  'mac-x64': { os: 'mac', platform: 'darwin', arch: 'x64' },
-  'mac-arm64': { os: 'mac', platform: 'darwin', arch: 'arm64' },
-};
 
 const { LEGAL_NOTICE, STATE_FILE_NAME } = await import(join(SERVER, 'dist/constants.js')).catch(() => {
   throw new Error('先に pnpm build を実行してください');
@@ -291,7 +282,7 @@ async function buildTarget(target, manifests) {
   const dir = join(stage, NAME);
   rmSync(stage, { recursive: true, force: true });
   mkdirSync(stage, { recursive: true });
-  const archiveBase = join(OUT, `${NAME}-${VERSION}-${target}`);
+  const archive = join(OUT, releaseArchiveName(VERSION, target));
   const [packaged] = await packager({
     dir: APP,
     out: join(stage, 'packager'),
@@ -319,8 +310,8 @@ async function buildTarget(target, manifests) {
     chmodSync(join(dir, NAME), 0o755);
     writeFileSync(join(dir, 'THIRD_PARTY_LICENSES.txt'), thirdPartyLicenses(manifests, nodeLicense));
     writeFileSync(join(dir, 'README.txt'), README.linux);
-    run('tar', ['-czf', `${archiveBase}.tar.gz`, '-C', stage, NAME]);
-    return `${archiveBase}.tar.gz`;
+    run('tar', ['-czf', archive, '-C', stage, NAME]);
+    return archive;
   }
 
   renameSync(packaged, dir);
@@ -330,8 +321,8 @@ async function buildTarget(target, manifests) {
   }
   writeFileSync(join(dir, 'THIRD_PARTY_LICENSES.txt'), thirdPartyLicenses(manifests));
   writeFileSync(join(dir, 'README.txt'), README[os]);
-  zip(dir, `${archiveBase}.zip`);
-  return `${archiveBase}.zip`;
+  zip(dir, archive);
+  return archive;
 }
 
 async function main() {

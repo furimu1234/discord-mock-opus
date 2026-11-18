@@ -4,8 +4,10 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, join } from 'node:path';
 import { app, BrowserWindow, ipcMain, Menu, screen, session, shell, type Display, type IpcMainInvokeEvent } from 'electron';
 import { MOCK_STOP_MESSAGE, STATE_FILE_NAME, URL_LINE_PREFIX } from '@dismock/server/constants';
-import { DesktopChannel, type DesktopDisplay, type TerminalChunk } from './bridge.js';
+import { DesktopChannel, type DesktopDisplay, type DesktopUpdate, type TerminalChunk } from './bridge.js';
 import { defaultLayout, findSavedDisplay, restoreLayout, MAIN_MIN_SIZE, TERMINAL_MIN_SIZE, type Layout, type SavedLayout } from './layout.js';
+import { releaseTarget } from './release.js';
+import { canReplace, cleanUpdate, describeUpdate, downloadUpdate, fetchLatestRelease, scheduleReplace, type GitHubRelease } from './update.js';
 
 /** 起動スクリプトが渡す、状態、添付、ウインドウの位置を保存するディレクトリ。 */
 const DATA_DIR_OPTION = '--data-dir';
@@ -28,6 +30,11 @@ const dataDir =
   (process.platform === 'darwin' ? join(app.getPath('appData'), app.getName()) : dirname(process.execPath));
 const serverArgs = dataDirIndex >= 0 ? userArgs.filter((_, index) => index !== dataDirIndex && index !== dataDirIndex + 1) : userArgs;
 const layoutFile = join(dataDir, 'data', LAYOUT_FILE_NAME);
+/** アップデートのダウンロードと展開に使うフォルダー。 */
+const updateDir = join(dataDir, 'data', 'update');
+/** 配布版のフォルダー。Windows の exe はこの中にある。 */
+const installDir = dirname(process.execPath);
+const target = releaseTarget(process.platform, process.arch);
 
 // ウインドウのキャッシュなども、状態と同じ場所にまとめる。
 app.setPath('userData', join(dataDir, 'data', 'desktop'));
@@ -38,6 +45,9 @@ let terminalHistory = '';
 /** これまでに書いた出力の文字数の合計。 */
 let terminalEnd = 0;
 let quitting = false;
+/** 「アップデートを確認」で受け取った最新版。「アップデート」はこの版を入れる。 */
+let latestRelease: GitHubRelease | undefined;
+let updating = false;
 
 const windows = () => [main, terminal].filter((window): window is BrowserWindow => Boolean(window && !window.isDestroyed()));
 
@@ -240,6 +250,28 @@ function handleIpc(): void {
     rmSync(layoutFile, { force: true });
     applyLayout(defaultLayout(screen.getPrimaryDisplay().workArea));
   });
+  ipcMain.handle(DesktopChannel.checkUpdate, async (event): Promise<DesktopUpdate> => {
+    if (!fromMain(event)) throw new Error('この画面からは確認できません');
+    latestRelease = await fetchLatestRelease();
+    return describeUpdate(app.getVersion(), latestRelease, target, canReplace(app.isPackaged));
+  });
+  ipcMain.handle(DesktopChannel.installUpdate, async (event) => {
+    if (!fromMain(event)) return;
+    if (!latestRelease || !canReplace(app.isPackaged)) throw new Error('先にアップデートを確認してください');
+    if (updating) throw new Error('アップデートの途中です');
+    updating = true;
+    try {
+      const staged = await downloadUpdate(latestRelease, target, installDir, updateDir, (progress) => {
+        if (main && !main.isDestroyed()) main.webContents.send(DesktopChannel.updateProgress, progress);
+      });
+      writeTerminal(`\n${latestRelease.tag_name} に差し替えて起動し直します\n`);
+      scheduleReplace(staged, installDir, updateDir);
+      app.quit();
+    } catch (error) {
+      updating = false;
+      throw error;
+    }
+  });
   ipcMain.handle(DesktopChannel.terminalHistory, (event): TerminalChunk => ({
     data: terminal && event.sender === terminal.webContents ? terminalHistory : '',
     end: terminalEnd,
@@ -247,6 +279,7 @@ function handleIpc(): void {
 }
 
 function start(): void {
+  cleanUpdate(updateDir);
   Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.getApplicationMenu() : null);
   // 画面が使う権限は、クリップボードへの書き込みだけ。
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === 'clipboard-sanitized-write'));

@@ -426,6 +426,10 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; backgr
 .admin-section-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .admin-section-header h2 { margin: 0; }
 .admin-section-header small { margin-right: auto; color: var(--text-muted); }
+.update-status { color: var(--text); margin-bottom: 8px; }
+.update-notes { max-height: 200px; overflow: auto; margin-bottom: 8px; padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; color: var(--text-muted); background: rgba(0, 0, 0, 0.2); border: 1px solid var(--hairline); border-radius: var(--radius-m); }
+.update-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.update-hint { color: var(--text-muted); }
 .admin-section .notice { margin: 0 0 12px; }
 .add-form { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .add-form input { flex: 1 1 200px; }

@@ -3,6 +3,7 @@ import { api, LEGAL_NOTICE, type Json } from '../api';
 import { canStartProjects, isActiveProject } from '../projects';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DesktopSection } from './DesktopSection';
+import { UpdateSection } from './UpdateSection';
 import { FolderDialog } from './FolderDialog';
 import { Select } from './Select';
 
@@ -161,6 +162,7 @@ export function AdminPage({ state, tests, onError, onOpenGuild }: AdminPageProps
 
       <ProjectsSection state={state} tests={tests} call={call} onConfirm={setConfirmation} />
       <DesktopSection onError={onError} />
+      <UpdateSection onError={onError} />
 
       <section className="admin-section">
         <h2>サーバー</h2>
