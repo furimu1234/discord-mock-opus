@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isForumType, isThreadType, isVoiceType, isWithoutMessages } from '@dismock/server/constants';
+import { isForumType, isThreadType, isVoiceType, isWithoutMessages, MessageFlag } from '@dismock/server/constants';
 import { api, ChannelKind, LEGAL_NOTICE, token, useMockData, type Json } from './api';
 import { DEFAULT_VOLUME, useVoiceAudio, useVolumes } from './audio';
 import { canViewChannel } from './permissions';
@@ -43,7 +43,7 @@ interface PopupHandlers {
 
 const POPUP_GAP = 8;
 const { text: TEXT, category: CATEGORY, directory: DIRECTORY } = ChannelKind;
-const EPHEMERAL = 64;
+const EPHEMERAL = MessageFlag.ephemeral;
 
 function ServerRail({ view, guilds, media, onSelect }: { view: View; guilds: Json[]; media: Record<string, string>; onSelect: (view: View) => void }) {
   const railButton = (key: string, label: string, active: boolean, target: View, content: React.ReactNode, color?: string) => (

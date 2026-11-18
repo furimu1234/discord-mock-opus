@@ -9,7 +9,7 @@ import type { ProjectLauncher } from './projects.js';
 import { Binary, NO_CONTENT, type Handler, type RouteModule } from './routes.js';
 import { serveStatic, type WebFiles } from './static.js';
 import type { TestRegistry } from './tests.js';
-import { AUDIO_LENGTH_SIZE, ChannelType, WEB_ORIGIN, WEB_ORIGIN_HEADER } from './constants.js';
+import { AUDIO_LENGTH_SIZE, ChannelType, creatableMessageFlags, WEB_ORIGIN, WEB_ORIGIN_HEADER } from './constants.js';
 import type { VoiceServer } from './voice.js';
 import { snowflake, type Json, type Store } from './store.js';
 
@@ -279,7 +279,7 @@ export class Rest {
       return this.chatMessages(params.channel!).slice(-limit).reverse();
     });
     api('POST', '/channels/:channel/messages', ({ params, body }) =>
-      store.createMessage(params.channel!, store.botUser, body),
+      store.createMessage(params.channel!, store.botUser, { ...body, flags: creatableMessageFlags(body.flags) }),
     );
     api('GET', '/channels/:channel/messages/:message', ({ params }) =>
       store.findMessage(params.channel!, params.message!),

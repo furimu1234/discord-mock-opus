@@ -1563,7 +1563,7 @@ export class Store extends EventEmitter {
       this.addThreadMember(channelId, author.id as string);
     }
     this.changed();
-    if (((message.flags as number) & 64) === 0) this.dispatch('MESSAGE_CREATE', message);
+    if (((message.flags as number) & MessageFlag.ephemeral) === 0) this.dispatch('MESSAGE_CREATE', message);
     moderated?.(message.id);
     return message;
   }

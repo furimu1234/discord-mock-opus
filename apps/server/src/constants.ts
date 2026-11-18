@@ -84,7 +84,27 @@ export const isInvitable = includes([
 export const INVITE_URL = 'https://discord.gg';
 
 /** メッセージの `flags` のビット。Discord の公開ドキュメントの値。 */
-export const MessageFlag = { crossposted: 1 << 0, isCrosspost: 1 << 1, hasThread: 1 << 5 } as const;
+export const MessageFlag = {
+  crossposted: 1 << 0,
+  isCrosspost: 1 << 1,
+  suppressEmbeds: 1 << 2,
+  hasThread: 1 << 5,
+  ephemeral: 1 << 6,
+  loading: 1 << 7,
+  suppressNotifications: 1 << 12,
+  isVoiceMessage: 1 << 13,
+  isComponentsV2: 1 << 15,
+} as const;
+
+/**
+ * メッセージの作成とウェブフックの実行で指定できるフラグ。
+ * ほかのフラグ（エフェメラルなど）は、Discord と同じく無視する。エフェメラルにできるのはインタラクションの応答だけ。
+ */
+export const CREATABLE_MESSAGE_FLAGS =
+  MessageFlag.suppressEmbeds | MessageFlag.suppressNotifications | MessageFlag.isVoiceMessage | MessageFlag.isComponentsV2;
+
+/** 指定できるフラグだけを残す。 */
+export const creatableMessageFlags = (flags: unknown) => (Number(flags) || 0) & CREATABLE_MESSAGE_FLAGS;
 
 export const WebhookType = { incoming: 1, channelFollower: 2 } as const;
 

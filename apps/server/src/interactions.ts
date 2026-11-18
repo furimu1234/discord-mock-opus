@@ -1,4 +1,4 @@
-import { BOT_NOT_CONNECTED_STATUS, CHAT_INPUT_COMMAND_TYPE, ComponentType, INTERACTION_TIMEOUT_STATUS, MESSAGE_COMMAND_TYPE, USER_COMMAND_TYPE } from './constants.js';
+import { BOT_NOT_CONNECTED_STATUS, CHAT_INPUT_COMMAND_TYPE, ComponentType, INTERACTION_TIMEOUT_STATUS, MESSAGE_COMMAND_TYPE, MessageFlag, USER_COMMAND_TYPE } from './constants.js';
 import { randomBytes } from 'node:crypto';
 import { NotFound, snowflake, type Json, type Store } from './store.js';
 
@@ -11,8 +11,7 @@ const CallbackType = {
   update: 7,
   modal: 9,
 } as const;
-const EPHEMERAL = 64;
-const LOADING = 128;
+const { ephemeral: EPHEMERAL, loading: LOADING } = MessageFlag;
 const OptionType = { subcommand: 1, group: 2, user: 6, channel: 7, role: 8, mentionable: 9 } as const;
 
 /** @internal */
