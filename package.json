@@ -18,6 +18,7 @@
     "docs:dev": "pnpm run docs:deps && pnpm --filter @dismock/docs run dev",
     "docs:build": "pnpm run docs:deps && pnpm --filter @dismock/docs run docs:build",
     "docs:preview": "pnpm --filter @dismock/docs run preview",
+    "publish:npm": "pnpm run build && pnpm --filter @dismock/client --filter @dismock/test publish --access public",
     "docs:deps": "pnpm --filter @dismock/server --filter @dismock/client --filter @dismock/test run build"
   },
   "devDependencies": {

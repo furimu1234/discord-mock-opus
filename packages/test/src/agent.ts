@@ -2,7 +2,7 @@ import type { ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { connection, StartupError } from '@dismock/client';
-import { STARTUP_ERROR_PREFIX } from '@dismock/server/constants';
+import { STARTUP_ERROR_PREFIX } from '#server-constants';
 import { EXIT_STARTUP_FAILURE, MARK_LIST, MARK_READY } from './constants.js';
 import { findProjectDir, findSetup, findTests, spawnRunner } from './spawn.js';
 

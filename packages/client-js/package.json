@@ -1,24 +1,82 @@
 {
   "name": "@dismock/client",
   "version": "0.1.0",
-  "type": "module",
-  "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./register": { "default": "./dist/register.js" },
-    "./shims/*": { "default": "./dist/shims/*.js" }
+  "description": "Bot のコードを変えずに、Discord の Bot を dismock の Mock へつなぐクライアント",
+  "keywords": [
+    "discord",
+    "discord.js",
+    "mock",
+    "testing",
+    "bot"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/furimu1234/discord-mock-opus.git",
+    "directory": "packages/client-js"
   },
-  "files": ["dist"],
+  "bugs": {
+    "url": "https://github.com/furimu1234/discord-mock-opus/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./register": {
+      "default": "./dist/register.js"
+    },
+    "./shims/*": {
+      "default": "./dist/shims/*.js"
+    }
+  },
+  "imports": {
+    "#server-constants": {
+      "types": "./vendor/server-constants.d.ts",
+      "default": "./vendor/server-constants.js"
+    }
+  },
+  "files": [
+    "dist",
+    "vendor"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/dismock-client.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./register": {
+        "default": "./dist/register.js"
+      },
+      "./shims/*": {
+        "default": "./dist/shims/*.js"
+      }
+    }
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "watch": "tsc -p tsconfig.json --watch --preserveWatchOutput",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build": "node ../../scripts/vendor-server-constants.mjs && tsc -p tsconfig.json",
+    "watch": "node ../../scripts/vendor-server-constants.mjs && tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "node ../../scripts/vendor-server-constants.mjs && tsc -p tsconfig.json --noEmit",
+    "prepack": "node ../../scripts/prepack.mjs"
   },
   "dependencies": {
-    "@dismock/server": "workspace:*",
     "@electric-sql/pglite": "^0.5.14",
     "drizzle-kit": "^0.31.11",
     "ws": "^8.22.1"
   },
-  "peerDependencies": { "discord.js": "^14" },
-  "devDependencies": { "@types/ws": "^8.18.2", "discord.js": "^14.28.0" }
+  "peerDependencies": {
+    "discord.js": "^14"
+  },
+  "devDependencies": {
+    "@dismock/server": "workspace:*",
+    "@microsoft/api-extractor": "^7.60.0",
+    "@types/ws": "^8.18.2",
+    "discord.js": "^14.28.0"
+  }
 }

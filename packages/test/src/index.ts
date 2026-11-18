@@ -1,21 +1,23 @@
-import type { Actor, TestClient, TestSeed, Traffic } from '@dismock/client';
-import { db } from '@dismock/client';
+import type { Actor, db, TestClient, TestSeed, Traffic } from '@dismock/client';
 
-export { watchModal } from '@dismock/client';import type { DEFAULT_USERS } from '@dismock/server/constants';
+export { watchModal } from '@dismock/client';
 
-export { expect } from './expect.js';
-export type { Matchers, PollApi, PollOptions, StableOptions } from './expect.js';
+import type { DEFAULT_USERS } from '#server-constants';
+
 export { fn, spyOn } from 'jest-mock';
-export { store } from './store.js';
-export { clock } from './clock.js';
+export { DEFAULT_USERS } from '#server-constants';
 export type { Clock } from './clock.js';
+export { clock } from './clock.js';
+export type { Matchers, PollApi, PollOptions, StableOptions } from './expect.js';
+export { expect } from './expect.js';
 export type { TestStore } from './store.js';
+export { store } from './store.js';
 
 /**
  * 管理画面で追加したダミーユーザー（ユーザー名と ID）。
  * `pnpm test` / `pnpm app` の起動中に生成される `dismock-users.d.ts` が内容を追加する。
  */
-export interface DummyUsers {}
+export type DummyUsers = {};
 
 /** 既定のダミーユーザー。`alice` は管理者、`bob` は権限なし。 */
 export type DefaultUser = (typeof DEFAULT_USERS)[number];

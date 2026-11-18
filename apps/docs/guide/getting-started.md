@@ -4,9 +4,36 @@ Bot を 1 つ作り、Mock に接続してテストを実行します。
 
 ## 準備
 
-dismock のパッケージは npm に公開していません。[リポジトリ](https://github.com/furimu1234/discord-mock-opus)を clone し、Bot を `examples/` の下に置いて pnpm workspace の一員として使います。
+テストに使うパッケージ `@dismock/client` と `@dismock/test` は npm で配布しています。Mock は配布版（Windows の exe、Mac の app、Linux のシェルスクリプト）か、[リポジトリ](https://github.com/furimu1234/discord-mock-opus)から起動します。Node.js は 24 以降が必要です。
 
-必要なものは Nix だけです。Node.js と pnpm は `shell.nix` で固定しています。
+### npm のパッケージを使う
+
+Bot のプロジェクトにパッケージを追加します。
+
+```sh
+npm install --save-dev @dismock/client @dismock/test
+```
+
+`package.json` は次のようになります。
+
+```json
+{
+  "name": "my-bot",
+  "private": true,
+  "type": "module",
+  "dependencies": { "discord.js": "^14.28.0" },
+  "devDependencies": {
+    "@dismock/client": "^0.1.0",
+    "@dismock/test": "^0.1.0"
+  }
+}
+```
+
+Bot のプロジェクトからは、Mock の状態の JSON を探せないことがあります。そのときは、テストを実行するターミナルで環境変数 `DISMOCK_URL` と `DISMOCK_TOKEN` に Mock の URL とトークンを指定してください（[CLI](./cli.md)）。
+
+### リポジトリの中で使う
+
+[リポジトリ](https://github.com/furimu1234/discord-mock-opus)を clone し、Bot を `examples/` の下に置いて pnpm workspace の一員として使うこともできます。必要なものは Nix だけです。Node.js と pnpm は `shell.nix` で固定しています。
 
 ```sh
 git clone https://github.com/furimu1234/discord-mock-opus.git
@@ -14,8 +41,6 @@ cd discord-mock-opus
 nix-shell
 pnpm install
 ```
-
-## Bot を用意する
 
 `examples/my-bot/package.json` を作成します。
 
@@ -31,6 +56,10 @@ pnpm install
   }
 }
 ```
+
+## Bot を用意する
+
+以降はリポジトリの中で使う場合のパスで説明します。npm のパッケージを使う場合は、`examples/my-bot/` を Bot のプロジェクトのフォルダーに読み替えてください。
 
 `examples/my-bot/src/index.ts` に Bot を書きます。すでに Bot がある場合は、そのコードをそのまま置いてください。
 
@@ -81,7 +110,9 @@ test('ping に応答する', {}, async ({ actor }) => {
 
 ## 実行する
 
-ワークスペースに Bot を追加したので、もう一度インストールしてから起動します。
+npm のパッケージを使う場合は、配布版の Mock を起動します。画面とターミナルのウインドウが開くので、管理画面の「Bot プロジェクト」で Bot のプロジェクトのフォルダーを追加して「起動」を押します。画面を使わずに実行するときは、Mock を起動したまま、Bot のプロジェクトで `npx dismock test` を実行します。
+
+リポジトリの中で使う場合は、ワークスペースに Bot を追加したので、もう一度インストールしてから起動します。
 
 ```sh
 pnpm install

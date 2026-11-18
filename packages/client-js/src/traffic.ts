@@ -1,5 +1,5 @@
 import type { Json, TrafficEntry } from '@dismock/server';
-import { ComponentType } from '@dismock/server/constants';
+import { ComponentType } from '#server-constants';
 import type { APIMessage } from 'discord.js';
 
 /** Bot が呼び出した REST API。DM の内容は `request` と `response` が伏せ字の文字列になる。 */
