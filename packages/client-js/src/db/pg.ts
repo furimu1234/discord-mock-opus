@@ -34,15 +34,34 @@ const tableRef = (name: string) => name.split('.').map(identifier).join('.');
 const userSchema = (column: string) =>
   `${column} NOT LIKE 'pg\\_%' AND ${column} NOT IN (${SYSTEM_SCHEMAS.map((schema) => `'${schema}'`).join(', ')})`;
 
+/** トランザクションを始める SQL。 */
+const BEGIN_SQL = /^\s*(BEGIN|START\s+TRANSACTION)\b/i;
+/** トランザクションを終える SQL（最後の文）。`ROLLBACK TO` はセーブポイントまでなので、終わりではない。 */
+const END_SQL = /(^|;)\s*(COMMIT|END|ABORT|ROLLBACK(?!\s+(WORK\s+|TRANSACTION\s+)?TO\b))\b[^;]*;?\s*$/i;
+/** 別の接続のトランザクションの終わりを待つ時間。過ぎたらエラーにする。 */
+export const TRANSACTION_WAIT_MS = 10_000;
+
 function isMultiStatementError(error: unknown): boolean {
   return error instanceof Error && error.message.includes('multiple commands');
 }
 
-/** PGlite（WASM 版の PostgreSQL）で動くインメモリ DB。 */
+/**
+ * PGlite（WASM 版の PostgreSQL）で動くインメモリ DB。
+ *
+ * @remarks
+ * PGlite の接続は 1 本なので、Bot の接続がトランザクションを始めると、終わるまで他の SQL を待たせる。
+ * テストのコード、DB Studio、Bot の別の接続の SQL が、Bot のトランザクションに入り込んで一緒にロールバックされないようにするため。
+ * 待つのは `TRANSACTION_WAIT_MS` までで、過ぎるとエラーになる（トランザクションの中で、`tx` ではなく別の接続を使ったときなど）。
+ */
 export class PgEngine implements Engine {
   /** {@inheritDoc Engine.kind} */
   readonly kind = 'pg';
   private database?: Promise<PGlite>;
+  /** トランザクションの途中の接続。 */
+  private owner?: object;
+  /** トランザクションが終わったときに解決する。 */
+  private ownerReleased = Promise.resolve();
+  private releaseOwner = () => {};
 
   private open(): Promise<PGlite> {
     this.database ??= import('@electric-sql/pglite').then(({ PGlite }) =>
@@ -51,8 +70,74 @@ export class PgEngine implements Engine {
     return this.database;
   }
 
-  /** @internal */
-  async execute(text: string, values: unknown[] = [], options: PgQueryOptions = {}): Promise<PgResult | PgResult[]> {
+  /** トランザクションを始めた接続を、終えるまで記録する。 */
+  private hold(connection: object): void {
+    this.owner = connection;
+    this.ownerReleased = new Promise((resolve) => {
+      this.releaseOwner = resolve;
+    });
+  }
+
+  private release(connection: object): void {
+    if (this.owner !== connection) return;
+    this.owner = undefined;
+    this.releaseOwner();
+  }
+
+  /** 別の接続のトランザクションが終わるまで待つ。 */
+  private async waitTurn(connection: object | undefined): Promise<void> {
+    const deadline = Date.now() + TRANSACTION_WAIT_MS;
+    while (this.owner && this.owner !== connection) {
+      const remaining = deadline - Date.now();
+      let timer: NodeJS.Timeout | undefined;
+      const timedOut = await Promise.race([
+        this.ownerReleased.then(() => false),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(true), Math.max(remaining, 0));
+        }),
+      ]);
+      clearTimeout(timer);
+      if (timedOut && this.owner && this.owner !== connection) {
+        throw new Error(
+          `別の接続のトランザクションが ${TRANSACTION_WAIT_MS}ms 終わらないため、SQL を実行できません。` +
+            'dismock の DB は接続が 1 本なので、トランザクションの中では、そのトランザクションの接続（Drizzle の tx など）を使ってください',
+        );
+      }
+    }
+  }
+
+  /**
+   * SQL を実行する。`connection` は Bot の接続（`pg` の `Client`）で、トランザクションを区別するのに使う。
+   * 省略したもの（テストのコード、`Pool.query`）は、どの接続のトランザクションにも入らない。
+   *
+   * @internal
+   */
+  async execute(text: string, values: unknown[] = [], options: PgQueryOptions = {}, connection?: object): Promise<PgResult | PgResult[]> {
+    await this.waitTurn(connection);
+    const ends = END_SQL.test(text);
+    const begins = Boolean(connection) && BEGIN_SQL.test(text) && !ends;
+    // 実行を待つ間に他の SQL が入り込まないよう、始める前に記録する。
+    if (begins && connection) this.hold(connection);
+    try {
+      return await this.run(text, values, options);
+    } catch (error) {
+      if (begins && connection) this.release(connection);
+      throw error;
+    } finally {
+      if (ends && connection) this.release(connection);
+    }
+  }
+
+  /**
+   * トランザクションの途中なら、ロールバックして終える。Bot が接続を返したり閉じたりしたときに呼ぶ。
+   *
+   * @internal
+   */
+  async abandon(connection: object): Promise<void> {
+    if (this.owner === connection) await this.execute('ROLLBACK', [], {}, connection);
+  }
+
+  private async run(text: string, values: unknown[], options: PgQueryOptions): Promise<PgResult | PgResult[]> {
     const database = await this.open();
     try {
       return this.toResult(text, await database.query(text, values, options));

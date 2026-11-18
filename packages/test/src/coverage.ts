@@ -1,4 +1,6 @@
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { Session } from 'node:inspector/promises';
+import { tmpdir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import libCoverage, { type CoverageMap, type CoverageSummaryData } from 'istanbul-lib-coverage';
@@ -80,12 +82,38 @@ export function summarize(map: CoverageMap): CoverageSummary {
   return { total: map.getCoverageSummary().toJSON(), files };
 }
 
-/** HTML をプロジェクトの `coverage/` に書き出し、表をターミナルに出力する。書き出したディレクトリを返す。 */
-export function writeCoverage(map: CoverageMap): string {
-  const dir = join(projectDir, COVERAGE_DIR);
+/** HTML を `dir` に書き出し、表をターミナルに出力する。 */
+function report(map: CoverageMap, dir: string): void {
   const context = libReport.createContext({ dir, coverageMap: map, defaultSummarizer: 'nested' });
   reports.create('html').execute(context);
   reports.create('text').execute(context);
+}
+
+/** HTML をプロジェクトの `coverage/` に書き出し、表をターミナルに出力する。書き出したディレクトリを返す。 */
+export function writeCoverage(map: CoverageMap): string {
+  const dir = join(projectDir, COVERAGE_DIR);
+  report(map, dir);
   console.log(`カバレッジの HTML: ${join(dir, 'index.html')}`);
   return dir;
+}
+
+/**
+ * HTML のファイルを作り、`/` 区切りの相対パスと base64 の中身の組で返す。表はターミナルに出力する。
+ * 画面から保存したときは、Mock がこのファイルを Mock のフォルダーの `coverage/` に書き出す。
+ * Bot は WSL の中など、Mock から見えない場所で動くことがあるため、ファイルの中身を送る。
+ */
+export function renderCoverage(map: CoverageMap): Record<string, string> {
+  const dir = mkdtempSync(join(tmpdir(), 'dismock-coverage-'));
+  try {
+    report(map, dir);
+    const files: Record<string, string> = {};
+    for (const entry of readdirSync(dir, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const path = join(entry.parentPath, entry.name);
+      files[relative(dir, path).split(sep).join('/')] = readFileSync(path).toString('base64');
+    }
+    return files;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }

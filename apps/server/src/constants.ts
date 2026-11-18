@@ -123,6 +123,8 @@ export const AuditLogEvent = {
   memberBanRemove: 23,
   memberUpdate: 24,
   memberRoleUpdate: 25,
+  memberMove: 26,
+  memberDisconnect: 27,
   roleCreate: 30,
   roleUpdate: 31,
   roleDelete: 32,

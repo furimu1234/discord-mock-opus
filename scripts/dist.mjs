@@ -177,7 +177,7 @@ if [ "\${1:-}" = "--no-window" ]; then
     echo "Node.js $REQUIRED_NODE_MAJOR 以上が必要です。インストールしてから実行してください" >&2
     exit 1
   fi
-  exec "$NODE" "$APP/server/dismock-server.cjs" --web "$APP/web" --data "$DIR/data/${STATE_FILE_NAME}" --media "$DIR/media" "$@"
+  exec "$NODE" "$APP/server/dismock-server.cjs" --web "$APP/web" --data "$DIR/data/${STATE_FILE_NAME}" --media "$DIR/media" --coverage "$DIR/coverage" "$@"
 fi
 
 # VS Code のターミナルなどから起動すると Electron が Node として動いてしまうので、外す。
@@ -212,7 +212,7 @@ const README = {
 
 起動: ./${NAME}
 ${WINDOWS_HELP}
-状態は data/、添付は media/ に保存します。
+状態は data/、添付は media/、画面から保存したカバレッジは coverage/ に保存します。
 
 同梱の Electron が動かない環境（NixOS など）では、PATH の electron を使い、なければ nix-shell で一時的に用意します。
 画面のない環境では ./${NAME} --no-window で起動し、表示された URL をブラウザで開きます。Ctrl+C で終了します。
@@ -223,7 +223,7 @@ ${LEGAL_NOTICE}
 
 起動: ${NAME}.exe をダブルクリックします。
 ${WINDOWS_HELP}
-状態は exe と同じフォルダーの data\\、添付は media\\ に保存します。
+状態は exe と同じフォルダーの data\\、添付は media\\、画面から保存したカバレッジは coverage\\ に保存します。
 
 署名のない exe なので、初回は「Windows によって PC が保護されました」と表示されることがあります。
 「詳細情報」→「実行」で起動します。
@@ -235,7 +235,7 @@ ${LEGAL_NOTICE}
 
 起動: ${NAME}.app を開きます。
 ${WINDOWS_HELP}
-状態と添付は ~/Library/Application Support/${NAME}/ に保存します。
+状態、添付、画面から保存したカバレッジは ~/Library/Application Support/${NAME}/ に保存します。
 
 Apple の公証を受けていないので、初回は開けないと表示されます。
 「システム設定」→「プライバシーとセキュリティ」の「このまま開く」を押すか、ターミナルで次を実行します。

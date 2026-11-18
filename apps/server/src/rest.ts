@@ -532,7 +532,7 @@ export class Rest {
       return { ok: true };
     });
     mock('POST', '/tests/coverage/saved', ({ body }) => {
-      tests.coverageSaved(body.project, body.dir ?? null);
+      tests.coverageSaved(body.project, body.files ?? null, body.dir ?? null);
       return { ok: true };
     });
     mock('POST', '/tests/reload', () => {

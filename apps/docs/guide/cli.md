@@ -26,6 +26,7 @@ Mock を起動します。
 | `--data` | `data/discord-mock-state.json` | 状態を保存する JSON |
 | `--token` | `DISMOCK_TOKEN` の値 | Mock のトークン |
 | `--media` | 起動したファイルと同じディレクトリの `media` | 添付ファイルの保存先 |
+| `--coverage` | 起動したファイルと同じディレクトリの `coverage` | 画面から保存したカバレッジの HTML の保存先 |
 | `--web` | リポジトリの `apps/web/dist` | 画面のビルド結果。配布版が指定する |
 | `--open` | なし | 起動後に画面をブラウザで開く |
 
@@ -72,7 +73,7 @@ dismock agent <プロジェクトのディレクトリ...>
 テストで実行した Bot のコードの割合（行、文、関数、分岐）を、ターミナルの表と HTML で確認できます。テストのコード、`testClient.ts`、依存パッケージは含めません。TypeScript は元のファイルの行で数えます。
 
 - **CLI:** `dismock test --coverage`、またはリポジトリのルートで `pnpm test:run --coverage` を実行します。
-- **画面:** 「全て実行」の後に、カバレッジを保存するかを尋ねるモーダルが開きます。保存すると、プロジェクトの `coverage/` に HTML を書き出し、`pnpm test` や `pnpm app` のターミナルに表を出力します。
+- **画面:** 「全て実行」の後に、カバレッジを保存するかを尋ねるモーダルが開きます。保存すると、Mock を起動したファイル（配布版は exe）と同じ場所の `coverage/<プロジェクト名>/` に HTML を書き出し、`pnpm test` や `pnpm app` のターミナルに表を出力します。`index.html` をブラウザで開くと、ファイルごとに実行した行を確認できます。配布版では、モーダルの「HTML を開く」で既定のブラウザで開きます。保存するたびに、そのプロジェクトの前回の HTML を置き換えます。Bot が WSL の中で動いていても、HTML は Mock の側に書き出します。
 
 画面から実行したときのカバレッジは、Bot の起動と、そのとき実行したテストで動いたコードです。テストの合間に画面から操作した分は含めません。テストで一度も読み込まれなかったファイルは表に出ません。
 
@@ -106,13 +107,13 @@ pnpm dist linux-x64 windows-x64 # 指定したものだけ
 
 ### OS ごとの違い
 
-- **Linux:** 展開したディレクトリに、起動スクリプト、Electron、Node を入れます。状態は `data/`、添付は `media/` に保存します。
+- **Linux:** 展開したディレクトリに、起動スクリプト、Electron、Node を入れます。状態は `data/`、添付は `media/`、画面から保存したカバレッジは `coverage/` に保存します。
   - 同梱の Electron が動かない環境（NixOS など）では、PATH の `electron` を使い、なければ `nix-shell -p electron` で用意します。日本語のフォントがないときは、nixpkgs の Noto Sans CJK を加えます。
   - ウインドウの位置を指定できるよう、Wayland でも X11（XWayland）で開きます。
   - ユーザー名前空間が使えない環境（Ubuntu 24.04 など）では、Chromium のサンドボックスを使わずに起動します。
   - 画面のない環境では `./dismock --no-window` で起動し、表示された URL をブラウザで開きます。同梱の Node を使い、動かないときは PATH の Node か `nix-shell -p nodejs_<版>` を使います。
-- **Windows:** 状態と添付は exe と同じフォルダーの `data\`、`media\` に保存します。署名がないので、初回は SmartScreen の確認が出ます。
-- **Mac:** 状態と添付は `~/Library/Application Support/dismock/` に保存します。アドホック署名だけで公証を受けていないので、初回は「システム設定」→「プライバシーとセキュリティ」で許可するか、`xattr -dr com.apple.quarantine dismock.app` を実行します。
+- **Windows:** 状態、添付、画面から保存したカバレッジは exe と同じフォルダーの `data\`、`media\`、`coverage\` に保存します。署名がないので、初回は SmartScreen の確認が出ます。
+- **Mac:** 状態、添付、画面から保存したカバレッジは `~/Library/Application Support/dismock/` に保存します。アドホック署名だけで公証を受けていないので、初回は「システム設定」→「プライバシーとセキュリティ」で許可するか、`xattr -dr com.apple.quarantine dismock.app` を実行します。
 
 ### ビルド
 

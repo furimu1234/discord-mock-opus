@@ -13,6 +13,7 @@ const { values } = parseArgs({
     data: { type: 'string', default: join('data', STATE_FILE_NAME) },
     token: { type: 'string', default: process.env.DISMOCK_TOKEN },
     media: { type: 'string' },
+    coverage: { type: 'string' },
     /** Web UI のビルド結果のディレクトリ。配布用のビルドで、起動スクリプトとウインドウが指定する。 */
     web: { type: 'string' },
     /** 起動後に画面をブラウザで開く。 */
@@ -20,8 +21,10 @@ const { values } = parseArgs({
   },
 });
 
-// 添付は、起動したファイル（dismock-server.js）と同じディレクトリの media に置く。
-const mediaDir = values.media ?? join(dirname(resolve(process.argv[1] ?? '.')), 'media');
+// 添付とカバレッジは、起動したファイル（dismock-server.js）と同じディレクトリの media と coverage に置く。
+const launchDir = dirname(resolve(process.argv[1] ?? '.'));
+const mediaDir = values.media ?? join(launchDir, 'media');
+const coverageDir = values.coverage ? resolve(values.coverage) : join(launchDir, 'coverage');
 const webDir = values.web ? resolve(values.web) : fileURLToPath(new URL('../../web/dist', import.meta.url));
 
 /** 既定のブラウザで開く。開けなくても URL は表示しているので、起動は続ける。 */
@@ -42,6 +45,7 @@ startServer({
   token: values.token,
   webFiles: webDirectory(webDir),
   mediaDir,
+  coverageDir,
   clearOnStart: true,
   seedDefaults: true,
 }).then(

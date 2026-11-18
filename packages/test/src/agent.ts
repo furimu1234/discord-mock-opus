@@ -21,7 +21,7 @@ interface AgentEvent {
 }
 
 /** Bot のプロセスからの返事。 */
-type BotMessage = { type: 'done'; coverage?: unknown } | { type: 'coverage-saved'; dir: string | null };
+type BotMessage = { type: 'done'; coverage?: unknown } | { type: 'coverage-saved'; files: Record<string, string> | null };
 
 /** Bot のプロセスから、指定した種類の返事を待つ。プロセスが終了したときは `undefined`。 */
 function reply<T extends BotMessage['type']>(child: ChildProcess, type: T): Promise<Extract<BotMessage, { type: T }> | undefined> {
@@ -176,12 +176,12 @@ async function runTests(project: Project, ids: string[], channelId?: string): Pr
   await registerAll(projects);
 }
 
-/** 最後に実行したテストのカバレッジを、Bot のプロセスがプロジェクトの `coverage/` に書き出す。 */
+/** 最後に実行したテストのカバレッジの HTML を Bot のプロセスが作り、Mock が Mock のフォルダーの `coverage/` に書き出す。 */
 async function saveCoverage(project: Project): Promise<void> {
   const child = bot?.project === project.name ? bot.child : undefined;
   const saved = child ? reply(child, 'coverage-saved') : Promise.resolve(undefined);
   child?.send({ type: 'save-coverage' });
-  await post('/tests/coverage/saved', { project: project.name, dir: (await saved)?.dir ?? null });
+  await post('/tests/coverage/saved', { project: project.name, files: (await saved)?.files ?? null });
 }
 
 async function subscribe(onEvent: (event: AgentEvent) => void): Promise<void> {

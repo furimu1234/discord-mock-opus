@@ -15,6 +15,7 @@ export const DesktopChannel = {
   checkUpdate: 'desktop:check-update',
   installUpdate: 'desktop:install-update',
   updateProgress: 'desktop:update-progress',
+  openCoverage: 'desktop:open-coverage',
   terminalData: 'terminal:data',
   terminalHistory: 'terminal:history',
 } as const;
@@ -65,6 +66,8 @@ export interface DesktopBridge {
   installUpdate(): Promise<void>;
   /** ダウンロードの進み具合を知らせる。戻り値で解除する。 */
   onUpdateProgress(listener: (progress: DesktopUpdateProgress) => void): () => void;
+  /** 画面から保存したカバレッジの HTML（`dir` の `index.html`）を既定のブラウザで開く。`dir` はカバレッジの保存先の中だけ。 */
+  openCoverage(dir: string): Promise<void>;
 }
 
 /**

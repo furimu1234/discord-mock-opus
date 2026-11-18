@@ -7,14 +7,15 @@ import { join } from 'node:path';
 import { buildDesktopApp, ROOT } from './desktop-app.mjs';
 
 const APP = join(ROOT, 'apps/desktop/dist/app');
-// pnpm web と同じく、添付はリポジトリの dismock-server.js の隣に置く。
+// pnpm web と同じく、添付とカバレッジはリポジトリの dismock-server.js の隣に置く。
 const MEDIA = join(ROOT, 'apps/server/bin/media');
+const COVERAGE = join(ROOT, 'apps/server/bin/coverage');
 // ウインドウの位置を指定できるよう、Wayland でも X11（XWayland）で開く。
 const FLAGS = process.platform === 'linux' ? ['--ozone-platform=x11'] : [];
 
 await buildDesktopApp(APP);
 
-const args = [APP, ...FLAGS, '--', '--data-dir', ROOT, '--media', MEDIA, ...process.argv.slice(2)];
+const args = [APP, ...FLAGS, '--', '--data-dir', ROOT, '--media', MEDIA, '--coverage', COVERAGE, ...process.argv.slice(2)];
 const electron = createRequire(join(ROOT, 'apps/desktop/package.json'))('electron');
 const usable = spawnSync(electron, ['-e', '0'], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }).status === 0;
 const [command, commandArgs] = usable ? [electron, args] : ['nix-shell', ['-p', 'electron', '--run', ['electron', ...args].map((arg) => `'${arg.replaceAll("'", `'\\''`)}'`).join(' ')]];

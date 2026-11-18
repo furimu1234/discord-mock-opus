@@ -60,7 +60,7 @@ Mock 側は、本番の Discord インフラや外部ネットワークに一切
   - `/api/v10/channels/:channelId/webhooks`, `/api/v10/guilds/:guildId/webhooks`, `/api/v10/webhooks/:id(/:token)`: ウェブフックの作成、取得、変更、削除、実行。トークンの付いた URL は Mock のトークンなしで使え、トークンのない URL には Mock のトークンが要る。インタラクションの応答と同じ形の URL は、アプリケーションの ID かどうかで区別する
   - `/api/v10/guilds/:guildId`（PATCH）: サーバーの名前、アイコン、説明、システムメッセージ、通知、安全設定の変更。画像は data URI で受け取り、Mock の中に保持する
   - `/api/v10/guilds/:guildId/audit-logs`: 監査ログ。操作者は API では Bot、画面とテストでは指定またはログイン中のユーザーで、`X-Audit-Log-Reason` を理由として記録する
-  - `/api/v10/guilds/:guildId/members/:userId`（PATCH / DELETE）, `/api/v10/guilds/:guildId/bans`, `/api/v10/guilds/:guildId/bulk-ban`: メンバーの変更、キック、BAN。BAN 中のユーザーは招待で参加できない
+  - `/api/v10/guilds/:guildId/members/:userId`（PATCH / DELETE）, `/api/v10/guilds/:guildId/bans`, `/api/v10/guilds/:guildId/bulk-ban`: メンバーの変更、キック、BAN。`channel_id` でボイスチャンネルの移動と切断（`null`）を行う。BAN 中のユーザーは招待で参加できない
   - `/api/v10/guilds/:guildId/emojis`, `/api/v10/guilds/:guildId/stickers`, `/api/v10/stickers/:stickerId`: 絵文字とスタンプ（ブーストなしの上限）
   - `/api/v10/guilds/:guildId/auto-moderation/rules`: AutoMod。キーワードとメンションスパムのルールを、Bot 以外のメッセージに適用する（ブロック、通知、タイムアウト）。スパム、プリセット、プロフィールのルールは保存だけで判定しない
   - メッセージの添付ファイル（Bot のマルチパートの `files[n]`、画面からの base64）は `/attachments/:channelId/:attachmentId/:filename?hm=<署名>` で配信する。上限は 1 メッセージ 10 個、1 個 10MB
@@ -150,7 +150,7 @@ Mock の起動時に Bot は起動しない。登録したプロジェクトの 
 - 画面から実行したテストは、実行ごとの結果（成功、失敗、エラー、テスト中の Bot の通信）を Mock のメモリに保存する。Mock を再起動すると消える。保存するのは直近 100 回まで。通信は Bot が呼び出した REST API のリクエストとレスポンス、Bot へ配信した Gateway イベントで、DM の内容は伏せる。
 - テストの区切りをチャンネルに表示する。区切りは画面だけのもので、Bot やテストには見えない。
 - testClient は Mock の再起動を検知すると再接続し、Bot を起動し直す。これにより DB も空になる。
-- カバレッジ: Bot のプロセスで V8 のカバレッジを取り、istanbul の形式で HTML（プロジェクトの `coverage/`）とターミナルの表に出力する。テストのコード、`testClient.ts`、依存パッケージは含めない。CLI は `dismock test --coverage`。画面は「全て実行」の後にモーダルで保存するかを選び、保存すると Bot のプロセスが書き出す。画面から実行したときは、Bot の起動とその実行のテストで動いたコードを数える。
+- カバレッジ: Bot のプロセスで V8 のカバレッジを取り、istanbul の形式で HTML とターミナルの表に出力する。テストのコード、`testClient.ts`、依存パッケージは含めない。CLI は `dismock test --coverage` で、HTML はプロジェクトの `coverage/` に書き出す。画面は「全て実行」の後にモーダルで保存するかを選び、保存すると Bot のプロセスが HTML を作って Mock へ送り、Mock が起動したファイル（exe、または `dismock-server.js`）と同じディレクトリの `coverage/<プロジェクト名>/` に書き出す（`--coverage` で場所を変えられる）。配布版はモーダルから既定のブラウザで開ける。画面から実行したときは、Bot の起動とその実行のテストで動いたコードを数える。
 
 ### 2.4. ダミーデータ & 永続化要件
 - ダミーユーザー、チャンネル、ロール等は、テストコードと画面の両方から追加でき、どちらから追加しても同じデータとして扱う。サーバーとユーザーは管理画面で、チャンネル、ロール、メンバーのロールはサーバー内の画面で設定する。
@@ -225,7 +225,7 @@ Bot は本物の DB に接続するコードのまま動く。テストの実行
 - **DB Studio への送信**: DB は Bot やテストのプロセスのメモリ上にあるため、それぞれのプロセスが内容を Mock へ送る。接続中の Bot は変化があったとき（1 秒ごとに確認）、画面から実行したテストはテストの終了時に送る。テーブルごとに先頭 1000 行までを送る。
 - **既知の制約**:
   - MySQL は SQL を変換して SQLite で実行するため、変換に対応していない MySQL 固有の構文はエラーになる。型の厳密さも SQLite に準じる。
-  - 接続は実質 1 本で、同時に複数のトランザクションは実行できない。
+  - 接続は実質 1 本で、同時に複数のトランザクションは実行できない。`pg` は Bot の接続がトランザクションを始めると、終わるまで他の SQL（テストのコード、DB Studio、Bot の別の接続）を待たせ、トランザクションに入り込んで一緒にロールバックされないようにする。待つのは 10 秒までで、過ぎるとエラーにする。
   - Sheets は値の読み書きとシートの追加、削除、改名に対応し、数式の計算や書式は対象外。
 
 ### 3.3. テストランナー & テスト DSL 要件 (`@dismock/test`)
