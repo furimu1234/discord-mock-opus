@@ -98,9 +98,6 @@ importers:
 
   packages/client-js:
     dependencies:
-      '@dismock/server':
-        specifier: workspace:*
-        version: link:../../apps/server
       '@electric-sql/pglite':
         specifier: ^0.5.14
         version: 0.5.14
@@ -111,6 +108,12 @@ importers:
         specifier: ^8.22.1
         version: 8.22.1
     devDependencies:
+      '@dismock/server':
+        specifier: workspace:*
+        version: link:../../apps/server
+      '@microsoft/api-extractor':
+        specifier: ^7.60.0
+        version: 7.60.0(@types/node@24.19.2)
       '@types/ws':
         specifier: ^8.18.2
         version: 8.18.2
@@ -123,9 +126,6 @@ importers:
       '@dismock/client':
         specifier: workspace:*
         version: link:../client-js
-      '@dismock/server':
-        specifier: workspace:*
-        version: link:../../apps/server
       expect:
         specifier: ^30.5.2
         version: 30.5.2
@@ -148,6 +148,9 @@ importers:
         specifier: ^9.3.0
         version: 9.3.0
     devDependencies:
+      '@dismock/server':
+        specifier: workspace:*
+        version: link:../../apps/server
       '@types/istanbul-lib-coverage':
         specifier: ^2.0.6
         version: 2.0.6

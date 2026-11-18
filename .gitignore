@@ -170,3 +170,7 @@ release/
 
 # Example bots (kept outside the repository)
 examples/
+
+# npm packages: copied at build / pack (scripts/vendor-server-constants.mjs, scripts/prepack.mjs)
+packages/*/vendor/
+packages/*/LICENSE

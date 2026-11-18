@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { DEFAULT_HOST, DEFAULT_PORT } from '@dismock/server/constants';
+import { DEFAULT_HOST, DEFAULT_PORT } from '#server-constants';
 import { runtime } from './runtime.js';
 
 const DATA_FILE = join('data', 'discord-mock-state.json');
