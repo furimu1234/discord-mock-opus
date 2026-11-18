@@ -1,6 +1,6 @@
 {
   "name": "@dismock/test",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "dismock の Mock の上で Discord の Bot をテストするテストランナーとテスト DSL",
   "keywords": [
     "discord",
