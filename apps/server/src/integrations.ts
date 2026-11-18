@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { AuditLogEvent, ChannelType, isInvitable, isThreadType, MessageFlag, WebhookType } from './constants.js';
+import { AuditLogEvent, ChannelType, creatableMessageFlags, isInvitable, isThreadType, MessageFlag, WebhookType } from './constants.js';
 import { auditChanges, BadRequest, NotFound, snowflake, type Json, type Store } from './store.js';
 
 /** Discord の公開ドキュメントの値。 */
@@ -242,7 +242,7 @@ export class Integrations {
     const channelId = threadId ?? webhook.channel_id;
     if (threadId && this.store.requireChannel(threadId).parent_id !== webhook.channel_id) throw new NotFound('Unknown Channel', 10003);
     if (!isThreadType(this.store.requireChannel(channelId).type) && threadId) throw new NotFound('Unknown Channel', 10003);
-    return this.store.createMessage(channelId, this.webhookAuthor(webhook, body.username), body, { webhook_id: id });
+    return this.store.createMessage(channelId, this.webhookAuthor(webhook, body.username), { ...body, flags: creatableMessageFlags(body.flags) }, { webhook_id: id });
   }
 
   webhookMessage(id: string, token: string, messageId: string): Json {

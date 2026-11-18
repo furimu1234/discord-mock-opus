@@ -18,8 +18,7 @@ const THREAD_STARTER = 21;
 const USER_JOIN = 7;
 const POLL_RESULT = 46;
 
-const EPHEMERAL = 64;
-const LOADING = 128;
+const { ephemeral: EPHEMERAL, loading: LOADING } = MessageFlag;
 const REACTIONS = ['👍', '❤️', '😂', '🎉', '👀'];
 /** ツールバーに並べる、すぐに付けられるリアクション。 */
 const QUICK_REACTIONS = REACTIONS.slice(0, 3);
