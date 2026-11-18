@@ -1,0 +1,19 @@
+{
+  "name": "@dismock/server",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./constants": { "types": "./dist/constants.d.ts", "default": "./dist/constants.js" },
+    "./permissions": { "types": "./dist/permissions.d.ts", "default": "./dist/permissions.js" }
+  },
+  "bin": { "dismock-server": "./bin/dismock-server.js" },
+  "files": ["bin", "dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": { "opusscript": "^0.1.1", "ws": "^8.22.1" },
+  "devDependencies": { "@types/ws": "^8.18.2" }
+}

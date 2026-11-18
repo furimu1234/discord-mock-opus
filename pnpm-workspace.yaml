@@ -1,0 +1,19 @@
+packages:
+  - apps/*
+  - packages/*
+  - examples/*
+  - examples/*/packages/*
+allowBuilds:
+  # 型定義のためだけに入れており、実行時は node:sqlite のシムを使う。
+  better-sqlite3: false
+  # 配布版のウインドウ（apps/desktop）の Electron 本体をインストール時に取得する。
+  electron: true
+  esbuild: true
+  # music-bot が使う yt-dlp をインストール時に取得する。
+  youtube-dl-exec: true
+minimumReleaseAgeExclude:
+  - '@discordjs/builders@1.15.0'
+  - '@electric-sql/pglite@0.5.14'
+  - discord.js@14.28.0
+  - googleapis@189.0.0
+  - ws@8.22.1
