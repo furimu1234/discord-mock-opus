@@ -4,7 +4,7 @@ import { closeEngines, connection, db, runtime, snapshotEngines, StartupError, t
 import { EXIT_STARTUP_FAILURE, MARK_LIST, MARK_READY } from './constants.js';
 import { createSuite, setCurrentSuite, type HookFn, type Suite, type TestCase, type TestContext } from './index.js';
 import { clock } from './clock.js';
-import { mergeCoverage, startCoverage, summarize, takeCoverage, writeCoverage } from './coverage.js';
+import { mergeCoverage, renderCoverage, startCoverage, summarize, takeCoverage, writeCoverage } from './coverage.js';
 import type { CoverageMap } from 'istanbul-lib-coverage';
 
 const DEFAULT_TIMEOUT_MS = 5000;
@@ -126,8 +126,18 @@ function publishLiveDb(): void {
     last = snapshot;
     await post('/db/live', { project: config.project, db: JSON.parse(snapshot) });
   };
-  const run = () => publish().catch((error: unknown) => console.error(error));
-  void run();
+  // Bot のトランザクションの間は DB の読み取りが待つので、前の送信が終わるまで次を始めない。
+  let busy = false;
+  const run = () => {
+    if (busy) return;
+    busy = true;
+    void publish()
+      .catch((error: unknown) => console.error(error))
+      .finally(() => {
+        busy = false;
+      });
+  };
+  run();
   setInterval(run, LIVE_DB_INTERVAL_MS);
 }
 
@@ -274,8 +284,7 @@ async function serveBot(testClient: TestClient | undefined): Promise<number> {
   publishLiveDb();
   process.on('message', (message: AgentMessage) => {
     if (message.type === 'save-coverage') {
-      const dir = last ? writeCoverage(last) : null;
-      process.send?.({ type: 'coverage-saved', dir });
+      process.send?.({ type: 'coverage-saved', files: last ? renderCoverage(last) : null });
       return;
     }
     config.ids = message.ids;

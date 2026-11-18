@@ -70,6 +70,7 @@ const ErrorCode = {
   archivedThread: 50083,
   threadAlreadyCreated: 160004,
   stageAlreadyOpen: 150006,
+  targetNotInVoice: 40032,
 };
 
 /** チャンネルの変更で受け付ける項目。 */
@@ -78,6 +79,11 @@ const CHANNEL_FIELDS = [
   'permission_overwrites', 'default_auto_archive_duration', 'default_reaction_emoji', 'default_thread_rate_limit_per_user',
   'default_sort_order', 'default_forum_layout', 'flags',
 ];
+/**
+ * チャンネルの作成で、指定があれば既定値の代わりに使う項目。種類に合わない項目は、既定値にない項目として無視する。
+ * 名前、種類、カテゴリー、トピック、権限の上書きは別に扱う。
+ */
+const CREATE_CHANNEL_FIELDS = CHANNEL_FIELDS.filter((key) => !['name', 'type', 'parent_id', 'topic', 'permission_overwrites'].includes(key));
 const THREAD_FIELDS = ['name', 'rate_limit_per_user', 'flags', 'applied_tags'];
 const THREAD_METADATA_FIELDS = ['archived', 'locked', 'auto_archive_duration', 'invitable'];
 
@@ -230,6 +236,14 @@ export interface SeedChannel {
   message?: Json;
   /** 権限の上書き。省略してカテゴリーに入れると、カテゴリーの権限を引き継ぐ（同期する）。 */
   permission_overwrites?: Json[];
+  /** ボイスとステージの人数の上限。0 は無制限。 */
+  user_limit?: number;
+  /** ボイスとステージのビットレート。 */
+  bitrate?: number;
+  /** 低速モードの秒数。 */
+  rate_limit_per_user?: number;
+  /** 年齢制限。 */
+  nsfw?: boolean;
 }
 
 /** 追加するダミーユーザー。 */
@@ -1045,6 +1059,10 @@ export class Store extends EventEmitter {
           }
         : {}),
     };
+    for (const key of CREATE_CHANNEL_FIELDS) {
+      const value = (input as Json)[key];
+      if (value !== undefined && value !== null && key in channel) channel[key] = value;
+    }
     this.state.channels[channel.id] = channel;
     this.state.messages[channel.id] = [];
     this.markCreated(channel.id);
@@ -1268,9 +1286,10 @@ export class Store extends EventEmitter {
     this.dispatch('GUILD_MEMBER_REMOVE', { guild_id: guildId, user: member.user });
   }
 
-  /** ニックネーム、ロール、タイムアウトを変更する。 */
+  /** ニックネーム、ロール、タイムアウト、ボイスチャンネルの移動と切断（`channel_id`）を変更する。 */
   updateMember(guildId: string, userId: string, patch: Json): Json {
     const member = this.requireMember(guildId, userId);
+    if (patch.channel_id !== undefined) this.moveMemberVoice(guildId, userId, patch.channel_id);
     if (patch.roles !== undefined) this.setMemberRoles(guildId, userId, patch.roles);
     const keys = ['nick', 'communication_disabled_until', 'mute', 'deaf'];
     const before = pick(member, keys);
@@ -1283,6 +1302,27 @@ export class Store extends EventEmitter {
     this.dispatch('GUILD_MEMBER_UPDATE', { guild_id: guildId, ...member });
     this.audit(guildId, AuditLogEvent.memberUpdate, userId, changes);
     return member;
+  }
+
+  /**
+   * ボイスチャンネルにいるメンバーを、別のボイスチャンネルへ移すか、`null` で切断する。
+   * 人数の上限は、Discord と同じく移動では見ない。
+   */
+  private moveMemberVoice(guildId: string, userId: string, channelId: string | null): void {
+    const current = this.state.voiceStates[`${guildId}:${userId}`];
+    if (!current) throw new BadRequest('Target user is not connected to voice', ErrorCode.targetNotInVoice);
+    if (channelId === null) {
+      this.setVoiceState(guildId, userId, null, current.session_id);
+      this.audit(guildId, AuditLogEvent.memberDisconnect, null, [], { count: '1' });
+      return;
+    }
+    const channel = this.requireChannel(channelId);
+    if (channel.guild_id !== guildId || !isVoiceType(channel.type)) {
+      throw new BadRequest('ボイスチャンネルではありません', ErrorCode.wrongChannelType);
+    }
+    if (current.channel_id === channelId) return;
+    this.setVoiceState(guildId, userId, channelId, current.session_id);
+    this.audit(guildId, AuditLogEvent.memberMove, null, [], { channel_id: channelId, count: '1' });
   }
 
   setMemberRoles(guildId: string, userId: string, roles: string[]): Json {

@@ -60,7 +60,7 @@ Mock 側は、本番の Discord インフラや外部ネットワークに一切
   - `/api/v10/channels/:channelId/webhooks`, `/api/v10/guilds/:guildId/webhooks`, `/api/v10/webhooks/:id(/:token)`: ウェブフックの作成、取得、変更、削除、実行。トークンの付いた URL は Mock のトークンなしで使え、トークンのない URL には Mock のトークンが要る。インタラクションの応答と同じ形の URL は、アプリケーションの ID かどうかで区別する
   - `/api/v10/guilds/:guildId`（PATCH）: サーバーの名前、アイコン、説明、システムメッセージ、通知、安全設定の変更。画像は data URI で受け取り、Mock の中に保持する
   - `/api/v10/guilds/:guildId/audit-logs`: 監査ログ。操作者は API では Bot、画面とテストでは指定またはログイン中のユーザーで、`X-Audit-Log-Reason` を理由として記録する
-  - `/api/v10/guilds/:guildId/members/:userId`（PATCH / DELETE）, `/api/v10/guilds/:guildId/bans`, `/api/v10/guilds/:guildId/bulk-ban`: メンバーの変更、キック、BAN。BAN 中のユーザーは招待で参加できない
+  - `/api/v10/guilds/:guildId/members/:userId`（PATCH / DELETE）, `/api/v10/guilds/:guildId/bans`, `/api/v10/guilds/:guildId/bulk-ban`: メンバーの変更、キック、BAN。`channel_id` でボイスチャンネルの移動と切断（`null`）を行う。BAN 中のユーザーは招待で参加できない
   - `/api/v10/guilds/:guildId/emojis`, `/api/v10/guilds/:guildId/stickers`, `/api/v10/stickers/:stickerId`: 絵文字とスタンプ（ブーストなしの上限）
   - `/api/v10/guilds/:guildId/auto-moderation/rules`: AutoMod。キーワードとメンションスパムのルールを、Bot 以外のメッセージに適用する（ブロック、通知、タイムアウト）。スパム、プリセット、プロフィールのルールは保存だけで判定しない
   - メッセージの添付ファイル（Bot のマルチパートの `files[n]`、画面からの base64）は `/attachments/:channelId/:attachmentId/:filename?hm=<署名>` で配信する。上限は 1 メッセージ 10 個、1 個 10MB
@@ -225,7 +225,7 @@ Bot は本物の DB に接続するコードのまま動く。テストの実行
 - **DB Studio への送信**: DB は Bot やテストのプロセスのメモリ上にあるため、それぞれのプロセスが内容を Mock へ送る。接続中の Bot は変化があったとき（1 秒ごとに確認）、画面から実行したテストはテストの終了時に送る。テーブルごとに先頭 1000 行までを送る。
 - **既知の制約**:
   - MySQL は SQL を変換して SQLite で実行するため、変換に対応していない MySQL 固有の構文はエラーになる。型の厳密さも SQLite に準じる。
-  - 接続は実質 1 本で、同時に複数のトランザクションは実行できない。
+  - 接続は実質 1 本で、同時に複数のトランザクションは実行できない。`pg` は Bot の接続がトランザクションを始めると、終わるまで他の SQL（テストのコード、DB Studio、Bot の別の接続）を待たせ、トランザクションに入り込んで一緒にロールバックされないようにする。待つのは 10 秒までで、過ぎるとエラーにする。
   - Sheets は値の読み書きとシートの追加、削除、改名に対応し、数式の計算や書式は対象外。
 
 ### 3.3. テストランナー & テスト DSL 要件 (`@dismock/test`)

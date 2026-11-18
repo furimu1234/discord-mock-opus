@@ -51,10 +51,16 @@ function queryOptions(config: QueryConfig): PgQueryOptions {
   return { rowMode: config.rowMode, parsers };
 }
 
-function run(input: string | QueryConfig, values: unknown, callback?: Callback): Promise<PgResult | PgResult[]> | void {
+/** `connection` は `Client` のときだけ渡す。トランザクションはその接続の中で区別する。 */
+function run(
+  input: string | QueryConfig,
+  values: unknown,
+  callback: Callback | undefined,
+  connection?: object,
+): Promise<PgResult | PgResult[]> | void {
   const done = typeof values === 'function' ? (values as Callback) : callback;
   const config = normalize(input, Array.isArray(values) ? values : undefined);
-  const result = db.pg().execute(config.text, config.values ?? [], queryOptions(config));
+  const result = db.pg().execute(config.text, config.values ?? [], queryOptions(config), connection);
   if (!done) return result;
   result.then(
     (value) => done(null, value),
@@ -74,15 +80,19 @@ export class Client extends EventEmitter {
   }
 
   query(input: string | QueryConfig, values?: unknown, callback?: Callback) {
-    return run(input, values, callback);
+    return run(input, values, callback, this);
   }
 
   async end(callback?: Callback): Promise<void> {
+    await db.pg().abandon(this);
     this.emit('end');
     callback?.(null);
   }
 
-  release(): void {}
+  /** プールに返す。トランザクションの途中なら、他の SQL を止めたままにしないようロールバックする。 */
+  release(): void {
+    void db.pg().abandon(this).catch(() => {});
+  }
 }
 
 export class Pool extends EventEmitter {
