@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { STARTUP_ERROR_PREFIX } from './constants.js';
 import type { Json, Store } from './store.js';
 import type { TestRegistry } from './tests.js';
+import { findWslAgent, isWindows, parseWslPath, spawnWslAgent, wslRoots } from './wsl.js';
 
 const LOOPBACK_HOSTS = ['127.0.0.1', '::1', 'localhost'];
 const AGENT_PATH = 'node_modules/@dismock/test/bin/dismock.js';
@@ -20,8 +21,22 @@ const conflict = (message: string) => Object.assign(new Error(message), { status
 
 const isDirectory = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() ?? false;
 
-/** プロジェクトにインストールされた `@dismock/test` のエージェントを親へ順に探す。 */
+const DRIVE_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+/** フォルダーの選択で最初に辿れる場所。Windows ではドライブと WSL のディストリビューション。 */
+function folderRoots(): { name: string; path: string }[] {
+  if (!isWindows) return [];
+  const drives = [...DRIVE_LETTERS].map((letter) => `${letter}:\\`).filter(isDirectory).map((path) => ({ name: path, path }));
+  return [...drives, ...wslRoots()];
+}
+
+/**
+ * プロジェクトにインストールされた `@dismock/test` のエージェントを親へ順に探す。
+ * WSL のフォルダーは、Windows から node_modules のシンボリックリンクをたどれないので、WSL の中で探す。
+ */
 function findAgent(dir: string): string | undefined {
+  const wsl = parseWslPath(dir);
+  if (wsl) return findWslAgent(wsl, AGENT_PATH);
   for (let current = dir; ; current = dirname(current)) {
     const agent = join(current, AGENT_PATH);
     if (existsSync(agent)) return agent;
@@ -86,7 +101,13 @@ export class ProjectLauncher {
       .map((entry) => ({ name: entry.name, path: join(resolved, entry.name) }))
       .sort((a, b) => a.name.localeCompare(b.name));
     const parent = dirname(resolved);
-    return { path: resolved, parent: parent === resolved ? null : parent, folders, installed: Boolean(findAgent(resolved)) };
+    return {
+      path: resolved,
+      parent: parent === resolved ? null : parent,
+      folders,
+      roots: folderRoots(),
+      installed: Boolean(findAgent(resolved)),
+    };
   }
 
   add(label: string, path: string): Json {
@@ -128,14 +149,22 @@ export class ProjectLauncher {
     if (!agent) throw new Error(`@dismock/test がインストールされていません: ${first.dir}`);
     if (id && this.tests.activeBot === first.label) throw conflict('すでに接続しています');
     if (id && this.started.includes(first.label)) return this.tests.selectBot(first.label);
+    // エージェントは 1 つのプロセスなので、WSL のフォルダーは同じディストリビューションのものだけを一緒に起動できる。
+    const wsl = parseWslPath(first.dir);
+    const dirs = targets.map((project) => {
+      const target = parseWslPath(project.dir);
+      if (target?.distro !== wsl?.distro) {
+        throw new Error(`WSL のフォルダーは、同じディストリビューションのフォルダーとだけ一緒に起動できます: ${project.dir}`);
+      }
+      return target ? target.path : project.dir;
+    });
     await this.halt();
 
-    const args = [agent, 'agent', ...targets.flatMap((project) => ['--label', project.label]), ...targets.map((project) => project.dir)];
-    const child = spawn(NODE, args, {
-      cwd: first.dir,
-      stdio: ['ignore', 'inherit', 'pipe'],
-      env: { ...process.env, DISMOCK_URL: this.url(), DISMOCK_TOKEN: this.store.state.token },
-    });
+    const args = ['agent', ...targets.flatMap((project) => ['--label', project.label]), ...dirs];
+    const env = { DISMOCK_URL: this.url(), DISMOCK_TOKEN: this.store.state.token };
+    const child = wsl
+      ? spawnWslAgent(wsl, agent, args, env)
+      : spawn(NODE, [agent, ...args], { cwd: first.dir, stdio: ['ignore', 'inherit', 'pipe'], env: { ...process.env, ...env } });
     this.agent = child;
     this.started = targets.map((project) => project.label);
     this.stopping = false;

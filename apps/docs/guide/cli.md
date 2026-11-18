@@ -121,4 +121,10 @@ pnpm dist linux-x64 windows-x64 # 指定したものだけ
 
 配布版の Mock は、管理画面から Bot を起動するときに、インストールされた Node.js を使います。
 
+Windows の Mock では、WSL のフォルダー（`\\wsl.localhost\Ubuntu\home\...` など）の Bot も起動できます。Windows からは pnpm の `node_modules` のシンボリックリンクをたどれず、依存も Linux 向けなので、Mock は `wsl.exe` で WSL の中で Bot を起動します。
+
+- Node.js は WSL の `PATH` にあるものを使います。なければ、フォルダーから親へ順に探した `shell.nix` を `nix-shell` で読み込んで使います。
+- Bot は WSL の中から Windows の Mock（`127.0.0.1`）に接続します。WSL のネットワークを mirrored にしてください（`%UserProfile%\.wslconfig` の `[wsl2]` に `networkingMode=mirrored`）。
+- 一緒に起動できるのは、同じディストリビューションのフォルダーだけです。
+
 Bot のプロジェクトからは、配布版の状態の JSON を探せません。`pnpm test` などを別に実行するときは、`DISMOCK_URL` と `DISMOCK_TOKEN` を指定してください。

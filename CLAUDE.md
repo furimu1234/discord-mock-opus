@@ -130,7 +130,7 @@ Mock 側は、本番の Discord インフラや外部ネットワークに一切
 - 配布用のビルドは、Linux（Ubuntu、NixOS）はシェルスクリプト、Windows は exe、Mac は app とする。どれもブラウザを使わず、画面とターミナルの 2 つのウインドウ（Electron）で開く。Mock はウインドウのプロセスが Electron を Node として子プロセスで起動し、ターミナルのウインドウに Mock と Bot の出力を表示する。
 - どちらかのウインドウを手前に出すと、もう一方も手前に出す。重なっているときは操作したほうを上にする。大きさは辺と四隅で変えられる。どちらかを閉じると終了する。
 - 表示するディスプレイを管理画面で選べ、終了したときのディスプレイと位置を保存して次の起動で使う。位置のリセットでメインのディスプレイの既定の位置に戻す。この項目はブラウザで開いた画面には表示しない。
-- 同梱の Electron が動かない NixOS では、PATH の `electron` か `nix-shell` の Electron を使う。Linux は `--no-window` でウインドウなしでも起動できる。管理画面から起動する Bot には、インストールされた Node を使う。
+- 同梱の Electron が動かない NixOS では、PATH の `electron` か `nix-shell` の Electron を使う。Linux は `--no-window` でウインドウなしでも起動できる。管理画面から起動する Bot には、インストールされた Node を使う。Windows の Mock に WSL のフォルダー（`\\wsl.localhost\<ディストリビューション>\...`）を登録したときは、`wsl.exe` で WSL の中でエージェントを起動し、Node は WSL の PATH か、フォルダーから親へ探した `shell.nix` の nix-shell のものを使う。WSL から Windows の `127.0.0.1` に届く必要がある（WSL の mirrored ネットワーク）。
 
 起動エラー（Mock に接続できない、トークンが一致しない、Bot や DB の準備に失敗した）が発生すると、`pnpm test` は終了する。`pnpm app` は Mock を起動できないときだけ終了し、Bot の起動エラーは管理画面に表示する。テストの失敗は起動エラーではない。
 
